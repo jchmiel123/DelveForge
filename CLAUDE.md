@@ -1,9 +1,11 @@
 # DelveForge - Claude Instructions
 
-Roguelike dungeon crawler + NeuroForge AI arena. Read DESIGN.md first -
-it holds the vision, the perception spec, and the roadmap. Follow the
-roadmap phases; do not skip ahead to AI training before the sensor
-vector design (P3) is agreed.
+Roguelike dungeon crawler + NeuroForge AI arena.
+
+READ ORDER: 1) HANDOFF.md (engineering truth: data contracts, exact
+workflow, pitfalls, ready-to-execute specs for the next phases),
+2) DESIGN.md (vision + perception spec). When they disagree, HANDOFF
+wins. Do not redesign systems HANDOFF marks as decided.
 
 ## Layout
 
