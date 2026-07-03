@@ -58,6 +58,12 @@ DF_ROOT.innerHTML=`
   <select id="brain-list" aria-label="Saved brains"><option value="">saved brains...</option></select>
   <button id="btn-load-brain">Load</button>
   <button id="btn-fresh-brain">Fresh</button>
+</div>
+<div id="monrow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 0;padding:8px 10px;border:1px solid #8886;border-radius:10px;">
+  <button id="btn-mon-ai" style="font-weight:500;">Monsters: learning</button>
+  <span id="mon-info" style="font-size:12px;opacity:0.75;"></span>
+  <span style="margin-left:auto;"></span>
+  <button id="btn-mon-fresh">Forget everything</button>
 </div>`;
 const TW=40,TH=26,WALL=0,FLOOR=1,STAIRS=3,CHEST=5,CHESTO=6;
 const LEVELS=["The abandoned manor","The cellars","The catacombs","The deep halls","The old mine","The ember depths"];
@@ -151,6 +157,7 @@ function hitMonster(m,dmg,label){
   m.hp-=dmg;m.flash=1;
   floatTxt(m.x,m.y,"-"+dmg,"#F09595");
   if(m.hp<=0){
+    monDeathLesson(m);
     monsters.splice(monsters.indexOf(m),1);
     const g=m.skel?3:1;gold+=g;
     if(evt)evt.kill++;
@@ -233,24 +240,123 @@ function endTurn(){
   if(cls.name==="Mage")mana=Math.min(12,mana+1);
   monstersTurn();computeVis();updateHud();
 }
-function monstersTurn(){
-  for(const m of monsters){
-    const d=Math.max(Math.abs(m.x-px),Math.abs(m.y-py));
-    if(d<=1){
-      const dmg=Math.max(1,m.atk-(cls.def+defB)+(R()<0.3?1:0));
-      hp-=dmg;if(evt)evt.dmg+=dmg;
-      floatTxt(px,py,"-"+dmg,"#E24B4A");
-      pushMsg("The "+(m.skel?"skeleton":"rat")+" hits you for "+dmg+".");
-      continue;
-    }
-    let sx=0,sy=0;
-    if(Math.hypot(m.x-px,m.y-py)<8&&los(m.x,m.y,px,py)){
-      sx=Math.sign(px-m.x);sy=Math.sign(py-m.y);
-      if(Math.abs(m.x-px)<Math.abs(m.y-py))sx=0;else sy=0;
-    }else if(R()<0.4){const dirs=[[0,-1],[0,1],[-1,0],[1,0]];const dd=dirs[ri(4)];sx=dd[0];sy=dd[1];}
-    const nx=m.x+sx,ny=m.y+sy;
-    if((sx||sy)&&walkable(nx,ny)&&!monsterAt(nx,ny)&&!(nx===px&&ny===py)){m.x=nx;m.y=ny;}
+const MSENS=11,MACT=5;
+const species={rat:null,skeleton:null};
+const monAI={on:true};
+function spec(m){return m.skel?"skeleton":"rat";}
+function specGet(name){
+  if(!species[name]){
+    let stored=null;
+    try{stored=(JSON.parse(localStorage.getItem("df_species")||"{}"))[name]||null;}catch(e){}
+    species[name]=stored||{brain:nfRandom([MSENS,16,MACT]),eps:1.0,steps:0,deaths:0,kills:0};
+    species[name].target=nfCopy(species[name].brain);
+    species[name].buffer=[];
   }
+  return species[name];
+}
+function specSave(){
+  try{
+    const out={};
+    for(const k of Object.keys(species)){
+      if(!species[k])continue;
+      out[k]={brain:species[k].brain,eps:species[k].eps,steps:species[k].steps,deaths:species[k].deaths,kills:species[k].kills};
+    }
+    localStorage.setItem("df_species",JSON.stringify(out));
+  }catch(e){}
+}
+function monSensor(m){
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]],v=[];
+  for(const d of dirs){
+    let wall=0;
+    for(let s=1;s<=6;s++){const x=m.x+d[0]*s,y=m.y+d[1]*s;if(!inB(x,y)||grid[idx(x,y)]===WALL){wall=1/s;break;}}
+    v.push(wall);
+  }
+  const dx=px-m.x,dy=py-m.y,dist=Math.abs(dx)+Math.abs(dy);
+  const sees=dist<=9&&los(m.x,m.y,px,py)?1:0;
+  v.push(Math.sign(dx),Math.sign(dy),1/(1+dist),sees);
+  let allies=0;
+  for(const o of monsters)if(o!==m&&Math.abs(o.x-m.x)<=1&&Math.abs(o.y-m.y)<=1)allies++;
+  v.push(m.hp/m.maxhp,Math.min(1,allies/3),1);
+  return v;
+}
+function monDeathLesson(m){
+  const sp=spec(m),S=species[sp];
+  if(!S||!m.lastS)return;
+  S.buffer.push([m.lastS,m.lastA,-6,null,true]);
+  S.deaths++;S.eps=Math.max(0.08,S.eps*0.97);
+  if(S.deaths%10===0)pushMsg("The "+sp+"s are learning from their dead...");
+}
+function attackPlayer(m){
+  const dmg=Math.max(1,m.atk-(cls.def+defB)+(R()<0.3?1:0));
+  hp-=dmg;if(evt)evt.dmg+=dmg;
+  floatTxt(px,py,"-"+dmg,"#E24B4A");
+  pushMsg("The "+(m.skel?"skeleton":"rat")+" hits you for "+dmg+".");
+  return dmg;
+}
+function monScriptAct(m){
+  const d=Math.max(Math.abs(m.x-px),Math.abs(m.y-py));
+  if(d<=1){attackPlayer(m);return;}
+  let sx=0,sy=0;
+  if(Math.hypot(m.x-px,m.y-py)<8&&los(m.x,m.y,px,py)){
+    sx=Math.sign(px-m.x);sy=Math.sign(py-m.y);
+    if(Math.abs(m.x-px)<Math.abs(m.y-py))sx=0;else sy=0;
+  }else if(R()<0.4){const dirs=[[0,-1],[0,1],[-1,0],[1,0]];const dd=dirs[ri(4)];sx=dd[0];sy=dd[1];}
+  const nx=m.x+sx,ny=m.y+sy;
+  if((sx||sy)&&walkable(nx,ny)&&!monsterAt(nx,ny)&&!(nx===px&&ny===py)){m.x=nx;m.y=ny;}
+}
+function monBrainAct(m){
+  const S=specGet(spec(m));
+  const s0=monSensor(m);
+  const a=Math.random()<S.eps?Math.floor(Math.random()*MACT):nfArgmax(nfForward(S.brain,s0));
+  const d0=Math.abs(px-m.x)+Math.abs(py-m.y);
+  let r=-0.02,killedPlayer=false;
+  if(a<4){
+    const dd=[[0,-1],[0,1],[-1,0],[1,0]][a];
+    const nx=m.x+dd[0],ny=m.y+dd[1];
+    if(nx===px&&ny===py){
+      const dealt=attackPlayer(m);
+      r+=0.8*dealt;
+      if(hp<=0){r+=6;killedPlayer=true;S.kills++;}
+    }else if(walkable(nx,ny)&&!monsterAt(nx,ny)){m.x=nx;m.y=ny;}
+  }
+  r+=0.15*(d0-(Math.abs(px-m.x)+Math.abs(py-m.y)));
+  m.lastS=s0;m.lastA=a;
+  S.buffer.push([s0,a,r,monSensor(m),killedPlayer]);
+  if(S.buffer.length>3000)S.buffer.shift();
+  S.steps++;S.eps=Math.max(0.08,S.eps*0.9999);
+}
+function monTrainAll(){
+  for(const k of Object.keys(species)){
+    const S=species[k];
+    if(!S||S.buffer.length<16)continue;
+    for(let n=0;n<6;n++){
+      const e=S.buffer[Math.floor(Math.random()*S.buffer.length)];
+      const tq=nfForward(S.brain,e[0]).slice();
+      tq[e[1]]=e[4]?e[2]:e[2]+0.92*Math.max.apply(null,nfForward(S.target,e[3]));
+      nfTrain(S.brain,e[0],tq,0.006);
+    }
+    if(S.steps%400<6)S.target=nfCopy(S.brain);
+    if(S.steps%500<6)specSave();
+  }
+  monInfo();
+}
+function monInfo(){
+  const el=document.getElementById("mon-info");
+  if(!el)return;
+  if(!monAI.on){el.textContent="scripted instincts";return;}
+  const parts=[];
+  for(const k of ["rat","skeleton"]){
+    const S=species[k];
+    if(S&&S.steps>0)parts.push(k+"s: "+(S.steps>999?(S.steps/1000).toFixed(1)+"k":S.steps)+" lessons, "+S.deaths+" deaths, "+S.kills+" kills");
+  }
+  el.textContent=parts.join(" - ")||"waiting for the first encounter";
+}
+function monstersTurn(){
+  for(const m of monsters.slice()){
+    if(hp<=0)break;
+    if(monAI.on)monBrainAct(m);else monScriptAct(m);
+  }
+  if(monAI.on)monTrainAll();
   if(hp<=0){
     if(evt)evt.died=true;
     if(ai.mode==="off"){
@@ -448,6 +554,17 @@ document.getElementById("btn-ai").onclick=()=>{
 };
 const aspd=document.getElementById("ai-speed");
 aspd.oninput=()=>{ai.sps=parseInt(aspd.value,10);document.getElementById("ai-speed-out").textContent=ai.sps+"/s";};
+document.getElementById("btn-mon-ai").onclick=()=>{
+  monAI.on=!monAI.on;
+  document.getElementById("btn-mon-ai").textContent="Monsters: "+(monAI.on?"learning":"scripted");
+  monInfo();
+};
+document.getElementById("btn-mon-fresh").onclick=()=>{
+  species.rat=null;species.skeleton=null;
+  try{localStorage.removeItem("df_species");}catch(e){}
+  pushMsg("The dungeon's creatures forget everything they knew.");
+  monInfo();
+};
 const cv=document.getElementById("cv"),ctx=cv.getContext("2d"),DPR=window.devicePixelRatio||1;
 function drawPortrait(c,cl){
   const x=c.getContext("2d"),w=c.width,h=c.height;
@@ -492,9 +609,10 @@ function startGame(i){
   document.getElementById("hud").style.display="flex";
   document.getElementById("log").style.display="";
   document.getElementById("airow").style.display="flex";
+  document.getElementById("monrow").style.display="flex";
   document.getElementById("dead").style.display="none";
   pushMsg("You enter the abandoned manor. Find the stairs down.");
-  genLevel();updateHud();cv.focus();refreshBrainList();
+  genLevel();updateHud();cv.focus();refreshBrainList();monInfo();
 }
 document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";
   document.getElementById("select").style.display="flex";
@@ -502,7 +620,8 @@ document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.rando
   document.getElementById("pad").style.display="none";
   document.getElementById("hud").style.display="none";
   document.getElementById("log").style.display="none";
-  document.getElementById("airow").style.display="none";};
+  document.getElementById("airow").style.display="none";
+  document.getElementById("monrow").style.display="none";};
 document.querySelectorAll("#pad [data-mv]").forEach(b=>{
   const mv=b.getAttribute("data-mv").split(",");
   b.onclick=()=>{if(ai.mode==="off")playerAct(parseInt(mv[0],10),parseInt(mv[1],10));};
@@ -568,6 +687,7 @@ function draw(t){
       ctx.fillStyle="#E24B4A";ctx.fillRect(X-ts*0.16,Y-3,2,2);}
     if(m.hp<m.maxhp){ctx.fillStyle="#333";ctx.fillRect(X-ts*0.25,Y-ts*0.42,ts*0.5,2.5);
       ctx.fillStyle="#E24B4A";ctx.fillRect(X-ts*0.25,Y-ts*0.42,ts*0.5*(m.hp/m.maxhp),2.5);}
+    if(monAI.on){ctx.strokeStyle="rgba(226,75,74,0.55)";ctx.lineWidth=1;ctx.beginPath();ctx.arc(X,Y,ts*0.38,0,7);ctx.stroke();}
   }
   for(const s of shots){
     s.age+=0.12;
