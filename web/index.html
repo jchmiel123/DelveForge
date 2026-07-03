@@ -101,7 +101,7 @@ function R(){return rng();}
 function ri(n){return Math.floor(R()*n);}
 let cls=null,depth=0,grid,rooms,torches,monsters,explored,litSet,px,py,fx=1,fy=0,hp,gold,vx,vy,showMap=false,state="select",visCache=new Set();
 let arrows=0,mana=0,cd=0;
-let level=1,xp=0,weapon={name:"Fists",atk:0},armor={name:"Cloth",def:0},inv={potion:0,scroll:0},lightTimer=0;
+let level=1,xp=0,weapon={name:"Fists",atk:0},armor={name:"Cloth",def:0},inv={potion:0,scroll:0},lightTimer=0,poisonTimer=0;
 const WEAPONS=[["Dagger",1],["Sword",2],["War axe",3],["Runeblade",4]];
 const ARMORS=[["Leather",1],["Chain",2],["Plate",3]];
 let floaters=[],msgs=[],evt=null;
@@ -142,8 +142,12 @@ function genLevel(){
     const r=rooms[1+ri(rooms.length-1)];
     const mx=r.x+ri(r.w),my=r.y+ri(r.h);
     if(grid[idx(mx,my)]!==FLOOR)continue;
-    const skel=depth>=2&&R()<0.5;
-    monsters.push({x:mx,y:my,vx:mx,vy:my,hp:skel?5:2,maxhp:skel?5:2,atk:skel?2:1,skel:skel,flash:0});
+    const roll2=R();
+    let kind="rat";
+    if(depth>=2&&roll2<0.4)kind="skeleton";
+    else if(depth>=1&&roll2>=0.45&&roll2<0.75)kind="spider";
+    const khp=kind==="skeleton"?5:kind==="spider"?3:2;
+    monsters.push({x:mx,y:my,vx:mx,vy:my,hp:khp,maxhp:khp,atk:kind==="skeleton"?2:1,skel:kind==="skeleton",spider:kind==="spider",flash:0});
   }
   litSet=new Set();
   for(const t of torches)for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
@@ -198,11 +202,11 @@ function hitMonster(m,dmg,label){
     monDeathLesson(m);
     monsters.splice(monsters.indexOf(m),1);
     const g=m.skel?3:1;gold+=g;
-    gainXp(m.skel?5:2);
-    if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+(m.skel?"skeleton":"rat")+" dropped a potion.");}
+    gainXp(m.skel?5:m.spider?3:2);
+    if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+mname(m)+" dropped a potion.");}
     if(evt)evt.kill++;
-    pushMsg(label+" slays the "+(m.skel?"skeleton":"rat")+" (+"+g+" gold, +"+(m.skel?5:2)+" xp).");
-  }else pushMsg(label+" hits the "+(m.skel?"skeleton":"rat")+" for "+dmg+".");
+    pushMsg(label+" slays the "+mname(m)+" (+"+g+" gold, +"+(m.skel?5:2)+" xp).");
+  }else pushMsg(label+" hits the "+mname(m)+" for "+dmg+".");
 }
 function lootChest(x,y){
   grid[idx(x,y)]=CHESTO;
@@ -293,16 +297,26 @@ function drinkPotion(){
   floatTxt(px,py,"+6","#9FE1CB");pushMsg("You drink a potion (+6 HP).");
   endTurn();
 }
+function tickPoison(){
+  if(poisonTimer>0){
+    poisonTimer--;hp-=1;
+    if(evt)evt.dmg+=1;
+    floatTxt(px,py,"-1","#97C459");
+    if(poisonTimer===0)pushMsg("The venom fades.");
+  }
+}
 function endTurn(){
   if(cd>0)cd--;
   if(lightTimer>0)lightTimer--;
   if(cls.name==="Mage")mana=Math.min(12,mana+1);
+  tickPoison();
   monstersTurn();computeVis();updateHud();
 }
 const MSENS=11,MACT=5;
-const species={rat:null,skeleton:null};
+const species={rat:null,spider:null,skeleton:null};
 const monAI={on:true};
-function spec(m){return m.skel?"skeleton":"rat";}
+function spec(m){return m.skel?"skeleton":m.spider?"spider":"rat";}
+function mname(m){return spec(m);}
 function specGet(name){
   if(!species[name]){
     let stored=null;
@@ -349,7 +363,8 @@ function attackPlayer(m){
   const dmg=Math.max(1,m.atk-defTotal()+(R()<0.3?1:0));
   hp-=dmg;if(evt)evt.dmg+=dmg;
   floatTxt(px,py,"-"+dmg,"#E24B4A");
-  pushMsg("The "+(m.skel?"skeleton":"rat")+" hits you for "+dmg+".");
+  pushMsg("The "+mname(m)+" hits you for "+dmg+".");
+  if(m.spider&&R()<0.5&&poisonTimer<=0){poisonTimer=3;floatTxt(px,py,"poison!","#97C459");pushMsg("Venom burns in your veins (3 turns).");}
   return dmg;
 }
 function monScriptAct(m){
@@ -408,7 +423,7 @@ function monInfo(){
   if(!el)return;
   if(!monAI.on){el.textContent="scripted instincts";return;}
   const parts=[];
-  for(const k of ["rat","skeleton"]){
+  for(const k of ["rat","spider","skeleton"]){
     const S=species[k];
     if(S&&S.steps>0)parts.push(k+"s: "+(S.steps>999?(S.steps/1000).toFixed(1)+"k":S.steps)+" lessons, "+S.deaths+" deaths, "+S.kills+" kills");
   }
@@ -448,6 +463,7 @@ function updateHud(){
   if(cls.name==="Ranger")ex+=" - "+arrows+" arrows";
   if(cls.name==="Mage")ex+=" - "+mana+" mana";
   if(cls.name==="Warrior")ex+=cd>0?" - smite in "+cd:" - smite ready";
+  if(poisonTimer>0)ex+=" - POISONED ("+poisonTimer+")";
   document.getElementById("h-stats").textContent=ex;
   renderInv();
   document.getElementById("h-gold").textContent=gold+" gold";
@@ -496,7 +512,7 @@ function nfTrain(b,x,t,lr){
     if(li>0)g=gin.map((v,j)=>nfClip(v*(b[li-1].a==="tanh"?1-A[li][j]*A[li][j]:1)));
   }
 }
-const SENSN=26,ACTN=7;
+const SENSN=27,ACTN=7;
 const ALBL=["up","down","left","right","ability","potion","scroll"];
 let lastActs=null,lastChosen=0,lastExplore=false,brainView=false;
 const ai={mode:"off",brain:null,target:null,eps:1.0,buffer:[],steps:0,episodes:0,bestDepth:0,sps:12,name:"fresh rookie"};
@@ -526,7 +542,7 @@ function sensor(){
   let adj=0;
   for(const m of monsters)if(Math.abs(m.x-px)<=1&&Math.abs(m.y-py)<=1)adj++;
   const res=cls.name==="Ranger"?Math.min(1,arrows/12):cls.name==="Mage"?mana/12:(cd===0?1:0);
-  v.push(Math.min(1,inv.potion/3),inv.scroll>0?1:0,res,lightTimer>0?1:0,weapon.atk/4,armor.def/3,Math.min(1,adj/3));
+  v.push(Math.min(1,inv.potion/3),inv.scroll>0?1:0,res,lightTimer>0?1:0,weapon.atk/4,armor.def/3,Math.min(1,adj/3),poisonTimer>0?1:0);
   return v;
 }
 function brainIn(b){return b[0].w[0].length;}
@@ -539,7 +555,7 @@ function aiRespawn(){
   if(depth>ai.bestDepth)ai.bestDepth=depth;
   pushMsg("The "+cls.name.toLowerCase()+" falls at depth "+(depth+1)+". Life "+(ai.episodes+1)+" begins.");
   level=1;xp=0;weapon={name:"Fists",atk:0};armor={name:"Cloth",def:0};
-  inv={potion:0,scroll:0};lightTimer=0;
+  inv={potion:0,scroll:0};lightTimer=0;poisonTimer=0;
   hp=maxHp();gold=0;depth=0;arrows=cls.name==="Ranger"?12:0;mana=cls.name==="Mage"?12:0;cd=0;
   genLevel();updateHud();
 }
@@ -547,6 +563,7 @@ function turnUpkeep(){
   if(cd>0)cd--;
   if(lightTimer>0)lightTimer--;
   if(cls.name==="Mage")mana=Math.min(12,mana+1);
+  tickPoison();
   monstersTurn();
   const fresh=computeVis();
   updateHud();
@@ -714,7 +731,7 @@ document.getElementById("btn-mon-ai").onclick=()=>{
   monInfo();
 };
 document.getElementById("btn-mon-fresh").onclick=()=>{
-  species.rat=null;species.skeleton=null;
+  species.rat=null;species.spider=null;species.skeleton=null;
   try{localStorage.removeItem("df_species");}catch(e){}
   pushMsg("The dungeon's creatures forget everything they knew.");
   monInfo();
@@ -754,7 +771,7 @@ function buildSelect(){
 function startGame(i){
   cls=CLASSES[i];gold=0;depth=0;fx=1;fy=0;state="play";
   level=1;xp=0;weapon={name:"Fists",atk:0};armor={name:"Cloth",def:0};
-  inv={potion:1,scroll:0};lightTimer=0;cd=0;hp=maxHp();
+  inv={potion:1,scroll:0};lightTimer=0;poisonTimer=0;cd=0;hp=maxHp();
   arrows=cls.name==="Ranger"?12:0;
   mana=cls.name==="Mage"?12:0;
   msgs=[];floaters=[];shots=[];
@@ -869,6 +886,17 @@ function draw(t){
       ctx.fillStyle="#e2e2ea";ctx.beginPath();ctx.arc(X,Y-ts*0.16,ts*0.15,0,7);ctx.fill();
       ctx.fillRect(X-ts*0.08,Y-ts*0.04,ts*0.16,ts*0.06);
       ctx.fillStyle="#16161c";ctx.fillRect(X-ts*0.09,Y-ts*0.2,2.6,2.6);ctx.fillRect(X+ts*0.035,Y-ts*0.2,2.6,2.6);
+    }else if(m.spider){
+      ctx.strokeStyle="#5a4a68";ctx.lineWidth=1.2;ctx.lineCap="round";
+      for(let li2=0;li2<4;li2++){
+        const a2=(li2-1.5)*0.5;
+        ctx.beginPath();ctx.moveTo(X,Y);ctx.lineTo(X-ts*0.32*Math.cos(a2),Y+ts*0.3*Math.sin(a2)-2);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(X,Y);ctx.lineTo(X+ts*0.32*Math.cos(a2),Y+ts*0.3*Math.sin(a2)-2);ctx.stroke();
+      }
+      ctx.fillStyle="#4a3a55";
+      ctx.beginPath();ctx.arc(X,Y+1,ts*0.16,0,7);ctx.fill();
+      ctx.beginPath();ctx.arc(X,Y-ts*0.12,ts*0.1,0,7);ctx.fill();
+      ctx.fillStyle="#E24B4A";ctx.fillRect(X-2.5,Y-ts*0.14,2,2);ctx.fillRect(X+0.5,Y-ts*0.14,2,2);
     }else{
       const fdir=px>=m.x?1:-1;
       ctx.strokeStyle="#8d8d96";ctx.lineWidth=1.3;ctx.lineCap="round";
