@@ -58,13 +58,23 @@ to expose. This is the interesting part.
       FOV + torch light + fog of war, minimap, chests, bump combat,
       stairs/descent, seeded runs, death/restart. Playable in browser
       (web/index.html) and as a chat widget.
-- [ ] P2: doors + keys, monster AI states, items/inventory, class
-      abilities (mage bolt, ranger shot), balance pass, sound off/on.
-- [ ] P3: AI arena. Finalize sensor vector, port core sim to Python as
-      a NeuroForge Environment (canonical sim for training; JS stays
-      the human/spectator client), reward design + curriculum:
-      1) find the stairs, 2) loot then stairs, 3) survive fights,
-      4) deep descent. Export trained brains to JSON.
+- [x] P2 (partial, v0.2): class abilities (warrior smite AoE + cooldown,
+      ranger arrows + ammo, mage bolt + mana regen), stats (ATK/DEF),
+      loot table (gold/potions/arrows/weapon +1/armor +1), potions,
+      message log, damage floaters, monster HP bars, hit flashes.
+      Still open: doors + keys, monster AI states, full inventory.
+- [~] P3 (started early, v0.2): in-browser AI mode. Sensor vector v1
+      (19 inputs): 4 axis rays x (wall, visible monster, visible chest)
+      + remembered-stairs compass (sgn dx, sgn dy, 1/dist, seen) + hp
+      frac + depth + bias. Actions: 4 moves (abilities not in AI action
+      space yet). Rewards: -0.02 step, +0.05 per newly seen tile,
+      +2 kill, +1 chest, +0.05/gold, -0.5/dmg taken, +8 descend,
+      -10 death. DQN-lite (replay 4000, batch 12, target sync 300,
+      eps anneals per step 0.99993 + per death 0.98). Brain roster in
+      localStorage (save/load/fresh). Same dungeon seed across AI lives
+      = reproducible curriculum. Still open: Python port as NeuroForge
+      Environment for serious training, ability actions, brain export
+      to NeuroForge JSON, second player driven by a saved brain.
 - [ ] P4: spectate mode - trained brain plays in the web client with
       live network overlay (port of the quest-brain inspector).
 - [ ] P5: polish - real tile sprites, animations, meta-progression.

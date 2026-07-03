@@ -7,8 +7,9 @@
 <style>
 :root{color-scheme:light dark;}
 body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0 10px;background:Canvas;color:CanvasText;}
-button{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid #8886;background:transparent;color:inherit;cursor:pointer;}
+button{font:inherit;font-size:13px;padding:5px 10px;border-radius:8px;border:1px solid #8886;background:transparent;color:inherit;cursor:pointer;}
 button:hover{background:#8882;}
+select{font:inherit;font-size:13px;padding:4px;border-radius:8px;border:1px solid #8886;background:transparent;color:inherit;}
 .card{border:1px solid #8886;border-radius:12px;padding:12px;cursor:pointer;text-align:center;flex:1;}
 .card:hover{border-color:#888;}
 </style>
@@ -18,9 +19,10 @@ button:hover{background:#8882;}
 <script>
 const DF_ROOT=document.getElementById("df-root");
 DF_ROOT.innerHTML=`
-<div id="hud" style="display:none;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 8px;font-size:14px;">
+<div id="hud" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 6px;font-size:14px;">
   <span id="h-class" style="font-weight:500;"></span>
   <span id="h-hp"></span>
+  <span id="h-stats" style="font-size:13px;opacity:0.8;"></span>
   <span id="h-gold" style="color:#BA7517;"></span>
   <span id="h-depth"></span>
   <span style="margin-left:auto;font-size:12px;opacity:0.6;" id="h-seed"></span>
@@ -34,28 +36,47 @@ DF_ROOT.innerHTML=`
     <button id="btn-again" style="color:#eee;">Rise again</button>
   </div>
 </div>
-<div id="pad" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;">
+<div id="log" style="display:none;font-size:12.5px;opacity:0.8;min-height:3.2em;margin:6px 2px;line-height:1.35;"></div>
+<div id="pad" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 0;">
   <button data-mv="0,-1" aria-label="Move up">&#9650;</button>
   <button data-mv="0,1" aria-label="Move down">&#9660;</button>
   <button data-mv="-1,0" aria-label="Move left">&#9664;</button>
   <button data-mv="1,0" aria-label="Move right">&#9654;</button>
+  <button id="btn-ability">Ability (F)</button>
+  <button id="btn-potion">Potion (Q)</button>
   <button id="btn-wait">Wait</button>
-  <button id="btn-map">Map</button>
-  <span style="font-size:12px;opacity:0.6;margin-left:auto;">arrows/WASD move, space waits, M map - click the dungeon first</span>
+  <button id="btn-map">Map (M)</button>
+  <span style="font-size:11.5px;opacity:0.55;margin-left:auto;">arrows/WASD - click the dungeon first</span>
+</div>
+<div id="airow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;padding:8px 10px;border:1px solid #8886;border-radius:10px;">
+  <button id="btn-ai" style="font-weight:500;">AI: off</button>
+  <span id="ai-info" style="font-size:12px;opacity:0.75;"></span>
+  <input type="range" id="ai-speed" min="1" max="40" value="12" step="1" style="width:100px;" aria-label="AI steps per second"/>
+  <span id="ai-speed-out" style="font-size:12px;opacity:0.7;">12/s</span>
+  <span style="margin-left:auto;"></span>
+  <button id="btn-save-brain">Save brain</button>
+  <select id="brain-list" aria-label="Saved brains"><option value="">saved brains...</option></select>
+  <button id="btn-load-brain">Load</button>
+  <button id="btn-fresh-brain">Fresh</button>
 </div>`;
 const TW=40,TH=26,WALL=0,FLOOR=1,STAIRS=3,CHEST=5,CHESTO=6;
 const LEVELS=["The abandoned manor","The cellars","The catacombs","The deep halls","The old mine","The ember depths"];
 const CLASSES=[
- {name:"Warrior",color:"#D85A30",hp:14,atk:3,light:3.2,cone:5,blurb:"Heavy steel. Short sight, hits like a forge."},
- {name:"Ranger",color:"#639922",hp:10,atk:2,light:3.0,cone:7,blurb:"Keen eyes. Sees far down dark halls."},
- {name:"Mage",color:"#7F77DD",hp:8,atk:2,light:4.6,cone:5,blurb:"Bright aura. Fragile, but the dark retreats."}];
+ {name:"Warrior",color:"#D85A30",hp:16,atk:3,def:1,light:3.2,cone:5,ability:"Smite",blurb:"Heavy steel. Smite hits every adjacent foe."},
+ {name:"Ranger",color:"#639922",hp:11,atk:2,def:0,light:3.0,cone:7,ability:"Shoot",blurb:"Keen eyes. Arrows strike from the dark."},
+ {name:"Mage",color:"#7F77DD",hp:9,atk:1,def:0,light:4.6,cone:5,ability:"Bolt",blurb:"Bright aura. Bolts of fire, fed by mana."}];
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 let baseSeed=Math.floor(Math.random()*1e9),rng=mulberry32(baseSeed);
 function R(){return rng();}
 function ri(n){return Math.floor(R()*n);}
 let cls=null,depth=0,grid,rooms,torches,monsters,explored,litSet,px,py,fx=1,fy=0,hp,gold,vx,vy,showMap=false,state="select",visCache=new Set();
+let atkB=0,defB=0,potions=0,arrows=0,mana=0,cd=0;
+let floaters=[],msgs=[],evt=null;
 function idx(x,y){return y*TW+x;}
 function inB(x,y){return x>=0&&x<TW&&y>=0&&y<TH;}
+function pushMsg(m){msgs.push(m);if(msgs.length>3)msgs.shift();
+  const el=document.getElementById("log");if(el)el.innerHTML=msgs.map((s,i)=>'<div style="opacity:'+(0.5+0.25*i)+'">'+s+"</div>").join("");}
+function floatTxt(x,y,txt,color){floaters.push({x:x,y:y,txt:txt,c:color,age:0});}
 function genLevel(){
   rng=mulberry32(baseSeed+depth*7919);
   grid=new Uint8Array(TW*TH);rooms=[];torches=[];monsters=[];explored=new Uint8Array(TW*TH);
@@ -78,7 +99,7 @@ function genLevel(){
     const n=1+ri(2);
     for(let k=0;k<n;k++)torches.push([r.x+ri(r.w),r.y===0?r.y:r.y+ri(r.h)]);
   }
-  for(let c=0;c<3;c++){const r=rooms[1+ri(rooms.length-1)];grid[idx(r.x+ri(r.w),r.y+ri(r.h))]=CHEST;}
+  for(let c=0;c<3+ri(2);c++){const r=rooms[1+ri(rooms.length-1)];grid[idx(r.x+ri(r.w),r.y+ri(r.h))]=CHEST;}
   const last=rooms[rooms.length-1];
   grid[idx(last.x+(last.w>>1),last.y+(last.h>>1))]=STAIRS;
   px=rooms[0].x+(rooms[0].w>>1);py=rooms[0].y+(rooms[0].h>>1);vx=px;vy=py;
@@ -89,7 +110,7 @@ function genLevel(){
     const mx=r.x+ri(r.w),my=r.y+ri(r.h);
     if(grid[idx(mx,my)]!==FLOOR)continue;
     const skel=depth>=2&&R()<0.5;
-    monsters.push({x:mx,y:my,vx:mx,vy:my,hp:skel?4:2,atk:skel?2:1,skel:skel});
+    monsters.push({x:mx,y:my,vx:mx,vy:my,hp:skel?5:2,maxhp:skel?5:2,atk:skel?2:1,skel:skel,flash:0});
   }
   litSet=new Set();
   for(const t of torches)for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
@@ -109,6 +130,7 @@ function los(x0,y0,x1,y1){
 }
 function computeVis(){
   visCache=new Set();
+  let fresh=0;
   for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
     const dx=x-px,dy=y-py,d=Math.hypot(dx,dy);
     const f=dx*fx+dy*fy,l=dx*(-fy)+dy*fx;
@@ -117,12 +139,34 @@ function computeVis(){
     if(!inCone&&!nearRing)continue;
     if(!los(px,py,x,y))continue;
     const lit=d<=cls.light||litSet.has(idx(x,y));
-    if(lit){visCache.add(idx(x,y));explored[idx(x,y)]=1;}
+    if(lit){visCache.add(idx(x,y));if(!explored[idx(x,y)])fresh++;explored[idx(x,y)]=1;}
   }
   visCache.add(idx(px,py));explored[idx(px,py)]=1;
+  return fresh;
 }
 function monsterAt(x,y){for(const m of monsters)if(m.x===x&&m.y===y)return m;return null;}
 function walkable(x,y){const t=grid[idx(x,y)];return inB(x,y)&&t!==WALL&&t!==CHEST;}
+function atk(){return cls.atk+atkB;}
+function hitMonster(m,dmg,label){
+  m.hp-=dmg;m.flash=1;
+  floatTxt(m.x,m.y,"-"+dmg,"#F09595");
+  if(m.hp<=0){
+    monsters.splice(monsters.indexOf(m),1);
+    const g=m.skel?3:1;gold+=g;
+    if(evt)evt.kill++;
+    pushMsg(label+" slays the "+(m.skel?"skeleton":"rat")+" (+"+g+" gold).");
+  }else pushMsg(label+" hits the "+(m.skel?"skeleton":"rat")+" for "+dmg+".");
+}
+function lootChest(x,y){
+  grid[idx(x,y)]=CHESTO;
+  const roll=R();
+  if(roll<0.35){const g=5+ri(6)+depth*3;gold+=g;if(evt)evt.gold+=g;floatTxt(x,y,"+"+g,"#EF9F27");pushMsg("A chest of coins: +"+g+" gold.");}
+  else if(roll<0.55){potions++;floatTxt(x,y,"potion","#F09595");pushMsg("Found a healing potion.");}
+  else if(roll<0.7){arrows+=6;floatTxt(x,y,"+6 arrows","#9FE1CB");pushMsg("A bundle of arrows (+6).");}
+  else if(roll<0.85){atkB++;floatTxt(x,y,"weapon!","#FAC775");pushMsg("A finer weapon! Attack +1 (now "+atk()+").");}
+  else{defB++;floatTxt(x,y,"armor!","#B5D4F4");pushMsg("Sturdy armor! Defense +1 (now "+(cls.def+defB)+").");}
+  if(evt)evt.chest++;
+}
 function playerAct(dx,dy){
   if(state!=="play")return;
   fx=dx;fy=dy;
@@ -130,22 +174,75 @@ function playerAct(dx,dy){
   if(inB(nx,ny)){
     const m=monsterAt(nx,ny);
     const t=grid[idx(nx,ny)];
-    if(m){
-      m.hp-=cls.atk+(R()<0.3?1:0);
-      if(m.hp<=0){monsters.splice(monsters.indexOf(m),1);gold+=m.skel?3:1;}
-    }else if(t===CHEST){
-      grid[idx(nx,ny)]=CHESTO;gold+=5+ri(6)+depth*3;
-    }else if(walkable(nx,ny)){
+    if(m)hitMonster(m,atk()+(R()<0.3?1:0),cls.name);
+    else if(t===CHEST)lootChest(nx,ny);
+    else if(walkable(nx,ny)){
       px=nx;py=ny;
-      if(t===STAIRS){depth++;hp=Math.min(cls.hp,hp+3);genLevel();updateHud();return;}
+      if(t===STAIRS){
+        depth++;hp=Math.min(maxHp(),hp+3);
+        if(evt)evt.descend=true;
+        pushMsg("You descend to "+LEVELS[Math.min(depth,LEVELS.length-1)].toLowerCase()+".");
+        genLevel();updateHud();return;
+      }
     }
   }
+  endTurn();
+}
+function maxHp(){return cls.hp;}
+function ability(){
+  if(state!=="play")return;
+  if(cls.name==="Warrior"){
+    if(cd>0){pushMsg("Smite is recovering ("+cd+").");return;}
+    let hit=0;
+    for(const m of monsters.slice())if(Math.abs(m.x-px)<=1&&Math.abs(m.y-py)<=1){hitMonster(m,atk()+1,"Smite");hit++;}
+    if(!hit){pushMsg("Smite cleaves empty air.");}
+    cd=6;
+  }else{
+    const tgt=nearestVisibleMonster(cls.name==="Ranger"?7:5);
+    if(!tgt){pushMsg("No target in sight.");return;}
+    if(cls.name==="Ranger"){
+      if(arrows<=0){pushMsg("Out of arrows.");return;}
+      arrows--;shots.push({x0:px,y0:py,x1:tgt.x,y1:tgt.y,age:0,c:"#9FE1CB"});
+      hitMonster(tgt,atk()+2,"The arrow");
+    }else{
+      if(mana<3){pushMsg("Not enough mana.");return;}
+      mana-=3;shots.push({x0:px,y0:py,x1:tgt.x,y1:tgt.y,age:0,c:"#AFA9EC"});
+      hitMonster(tgt,4,"The bolt");
+    }
+  }
+  endTurn();
+}
+let shots=[];
+function nearestVisibleMonster(range){
+  let best=null,bd=range+0.001;
+  for(const m of monsters){
+    const d=Math.hypot(m.x-px,m.y-py);
+    if(d<=bd&&visCache.has(idx(m.x,m.y))&&los(px,py,m.x,m.y)){bd=d;best=m;}
+  }
+  return best;
+}
+function drinkPotion(){
+  if(state!=="play")return;
+  if(potions<=0){pushMsg("No potions left.");return;}
+  potions--;hp=Math.min(maxHp(),hp+6);
+  floatTxt(px,py,"+6","#9FE1CB");pushMsg("You drink a potion (+6 HP).");
+  endTurn();
+}
+function endTurn(){
+  if(cd>0)cd--;
+  if(cls.name==="Mage")mana=Math.min(12,mana+1);
   monstersTurn();computeVis();updateHud();
 }
 function monstersTurn(){
   for(const m of monsters){
     const d=Math.max(Math.abs(m.x-px),Math.abs(m.y-py));
-    if(d<=1){hp-=m.atk;continue;}
+    if(d<=1){
+      const dmg=Math.max(1,m.atk-(cls.def+defB)+(R()<0.3?1:0));
+      hp-=dmg;if(evt)evt.dmg+=dmg;
+      floatTxt(px,py,"-"+dmg,"#E24B4A");
+      pushMsg("The "+(m.skel?"skeleton":"rat")+" hits you for "+dmg+".");
+      continue;
+    }
     let sx=0,sy=0;
     if(Math.hypot(m.x-px,m.y-py)<8&&los(m.x,m.y,px,py)){
       sx=Math.sign(px-m.x);sy=Math.sign(py-m.y);
@@ -154,23 +251,206 @@ function monstersTurn(){
     const nx=m.x+sx,ny=m.y+sy;
     if((sx||sy)&&walkable(nx,ny)&&!monsterAt(nx,ny)&&!(nx===px&&ny===py)){m.x=nx;m.y=ny;}
   }
-  if(hp<=0){state="dead";
-    document.getElementById("dead-sub").textContent="Depth "+(depth+1)+" - "+gold+" gold - seed "+baseSeed;
-    document.getElementById("dead").style.display="flex";
+  if(hp<=0){
+    if(evt)evt.died=true;
+    if(ai.mode==="off"){
+      state="dead";
+      document.getElementById("dead-sub").textContent="Depth "+(depth+1)+" - "+gold+" gold - seed "+baseSeed;
+      document.getElementById("dead").style.display="flex";
+    }
   }
 }
 function updateHud(){
   document.getElementById("h-class").textContent=cls.name;
-  document.getElementById("h-hp").textContent="HP "+Math.max(0,hp)+"/"+cls.hp;
-  document.getElementById("h-hp").style.color=hp<=cls.hp/3?"#E24B4A":"inherit";
+  document.getElementById("h-hp").textContent="HP "+Math.max(0,hp)+"/"+maxHp();
+  document.getElementById("h-hp").style.color=hp<=maxHp()/3?"#E24B4A":"inherit";
+  let ex="ATK "+atk()+" DEF "+(cls.def+defB)+" - "+potions+" potions";
+  if(cls.name==="Ranger")ex+=" - "+arrows+" arrows";
+  if(cls.name==="Mage")ex+=" - "+mana+" mana";
+  if(cls.name==="Warrior")ex+=cd>0?" - smite in "+cd:" - smite ready";
+  document.getElementById("h-stats").textContent=ex;
   document.getElementById("h-gold").textContent=gold+" gold";
   document.getElementById("h-depth").textContent=(LEVELS[Math.min(depth,LEVELS.length-1)])+" ("+(depth+1)+")";
   document.getElementById("h-seed").textContent="seed "+baseSeed;
 }
+const NFCLIP=5;
+function nfClip(g){return g>NFCLIP?NFCLIP:(g<-NFCLIP?-NFCLIP:g);}
+function nfGauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function nfRandom(sizes){
+  const L=[];
+  for(let i=0;i<sizes.length-1;i++){
+    const s=Math.sqrt(2/sizes[i]);
+    L.push({w:Array.from({length:sizes[i+1]},()=>Array.from({length:sizes[i]},()=>nfGauss()*s)),b:new Array(sizes[i+1]).fill(0),a:i===sizes.length-2?"linear":"tanh"});
+  }
+  return L;
+}
+function nfCopy(b){return JSON.parse(JSON.stringify(b));}
+function nfForward(b,x){
+  let cur=x;
+  for(const L of b){
+    const out=[];
+    for(let i=0;i<L.w.length;i++){let t=L.b[i];const row=L.w[i];for(let j=0;j<row.length;j++)t+=row[j]*cur[j];out.push(L.a==="tanh"?Math.tanh(t):t);}
+    cur=out;
+  }
+  return cur;
+}
+function nfArgmax(a){let bi=0;for(let i=1;i<a.length;i++)if(a[i]>a[bi])bi=i;return bi;}
+function nfTrain(b,x,t,lr){
+  let cur=x;const A=[x];
+  for(const L of b){
+    const out=[];
+    for(let i=0;i<L.w.length;i++){let s=L.b[i];const row=L.w[i];for(let j=0;j<row.length;j++)s+=row[j]*cur[j];out.push(L.a==="tanh"?Math.tanh(s):s);}
+    A.push(out);cur=out;
+  }
+  const a1=A[1],out=A[2],nH=a1.length,nO=out.length;
+  const g2=out.map((o,i)=>nfClip(2*(o-t[i])/nO));
+  const g1raw=new Array(nH).fill(0);
+  for(let j=0;j<nH;j++){let s=0;for(let i=0;i<nO;i++)s+=b[1].w[i][j]*g2[i];g1raw[j]=s;}
+  for(let i=0;i<nO;i++){const g=g2[i],row=b[1].w[i];for(let j=0;j<nH;j++)row[j]-=lr*g*a1[j];b[1].b[i]-=lr*g;}
+  for(let i=0;i<nH;i++){const g=nfClip(g1raw[i]*(1-a1[i]*a1[i])),row=b[0].w[i];for(let j=0;j<x.length;j++)row[j]-=lr*g*x[j];b[0].b[i]-=lr*g;}
+}
+const SENSN=19,ACTN=4;
+const ai={mode:"off",brain:null,target:null,eps:1.0,buffer:[],steps:0,episodes:0,bestDepth:0,sps:12,name:"fresh rookie"};
+function sensor(){
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]],v=[];
+  for(const d of dirs){
+    let wall=0,mon=0,chest=0;
+    for(let s=1;s<=10;s++){
+      const x=px+d[0]*s,y=py+d[1]*s;
+      if(!inB(x,y)||grid[idx(x,y)]===WALL){wall=1/s;break;}
+      const id=idx(x,y);
+      if(visCache.has(id)){
+        if(!mon&&monsterAt(x,y))mon=1/s;
+        if(!chest&&grid[id]===CHEST)chest=1/s;
+      }
+    }
+    v.push(wall,mon,chest);
+  }
+  let sx=0,sy=0,sd=0,seen=0;
+  const si=grid.indexOf(STAIRS);
+  if(si>=0&&explored[si]){
+    const tx=si%TW,ty=Math.floor(si/TW);
+    seen=1;sx=Math.sign(tx-px);sy=Math.sign(ty-py);
+    sd=1/(1+Math.abs(tx-px)+Math.abs(ty-py));
+  }
+  v.push(sx,sy,sd,seen,hp/maxHp(),Math.min(1,depth/6),1);
+  return v;
+}
+function aiEnsureBrain(){
+  if(!ai.brain){ai.brain=nfRandom([SENSN,24,ACTN]);ai.target=nfCopy(ai.brain);ai.eps=1.0;ai.name="fresh rookie";}
+}
+function aiRespawn(){
+  ai.episodes++;
+  if(depth>ai.bestDepth)ai.bestDepth=depth;
+  pushMsg("The "+cls.name.toLowerCase()+" falls at depth "+(depth+1)+". Life "+(ai.episodes+1)+" begins.");
+  hp=maxHp();gold=0;depth=0;atkB=0;defB=0;potions=0;arrows=cls.name==="Ranger"?12:0;mana=cls.name==="Mage"?12:0;cd=0;
+  genLevel();updateHud();
+}
+function aiTick(){
+  if(state!=="play")return;
+  aiEnsureBrain();
+  const s0=sensor();
+  const explore=ai.mode==="learning"&&Math.random()<ai.eps;
+  const q=nfForward(ai.brain,s0);
+  const a=explore?Math.floor(Math.random()*ACTN):nfArgmax(q);
+  evt={gold:0,kill:0,chest:0,dmg:0,descend:false,died:false};
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+  const fresh=aiMove(dirs[a][0],dirs[a][1]);
+  let r=-0.02+fresh*0.05+evt.kill*2+evt.chest*1+evt.gold*0.05-evt.dmg*0.5;
+  if(evt.descend)r+=8;
+  if(evt.died)r-=10;
+  const done=evt.died;
+  if(ai.mode==="learning"){
+    const s1=done?null:sensor();
+    ai.buffer.push([s0,a,r,s1,done]);
+    if(ai.buffer.length>4000)ai.buffer.shift();
+    if(ai.buffer.length>=12){
+      for(let n=0;n<12;n++){
+        const e=ai.buffer[Math.floor(Math.random()*ai.buffer.length)];
+        const tq=nfForward(ai.brain,e[0]).slice();
+        tq[e[1]]=e[4]?e[2]:e[2]+0.95*Math.max.apply(null,nfForward(ai.target,e[3]));
+        nfTrain(ai.brain,e[0],tq,0.008);
+      }
+    }
+    ai.steps++;
+    if(ai.steps%300===0)ai.target=nfCopy(ai.brain);
+    ai.eps=Math.max(0.05,ai.eps*0.99993);
+  }
+  if(done){
+    if(ai.mode==="learning")ai.eps=Math.max(0.05,ai.eps*0.98);
+    aiRespawn();
+  }
+  evt=null;
+  aiInfo();
+}
+function aiMove(dx,dy){
+  fx=dx;fy=dy;
+  const nx=px+dx,ny=py+dy;
+  if(inB(nx,ny)){
+    const m=monsterAt(nx,ny);
+    const t=grid[idx(nx,ny)];
+    if(m)hitMonster(m,atk()+(R()<0.3?1:0),cls.name);
+    else if(t===CHEST)lootChest(nx,ny);
+    else if(walkable(nx,ny)){
+      px=nx;py=ny;
+      if(t===STAIRS){
+        depth++;hp=Math.min(maxHp(),hp+3);evt.descend=true;
+        pushMsg("The "+cls.name.toLowerCase()+" descends to "+LEVELS[Math.min(depth,LEVELS.length-1)].toLowerCase()+"!");
+        genLevel();updateHud();return 0;
+      }
+    }
+  }
+  if(cd>0)cd--;
+  if(cls.name==="Mage")mana=Math.min(12,mana+1);
+  monstersTurn();
+  const fresh=computeVis();
+  updateHud();
+  return fresh;
+}
+function aiInfo(){
+  const el=document.getElementById("ai-info");
+  if(ai.mode==="off"){el.textContent="";return;}
+  el.textContent=ai.name+" - life "+(ai.episodes+1)+" - best depth "+(ai.bestDepth+1)+(ai.mode==="learning"?" - explore "+Math.round(ai.eps*100)+"%":" - frozen");
+}
+function brainStore(){try{return JSON.parse(localStorage.getItem("df_brains")||"{}");}catch(e){return {};}}
+function refreshBrainList(){
+  const sel=document.getElementById("brain-list"),cur=sel.value;
+  sel.innerHTML='<option value="">saved brains...</option>';
+  for(const k of Object.keys(brainStore())){const o=document.createElement("option");o.value=k;o.textContent=k;sel.appendChild(o);}
+  sel.value=cur;
+}
+document.getElementById("btn-save-brain").onclick=()=>{
+  if(!ai.brain){pushMsg("No brain to save yet - turn the AI on first.");return;}
+  const store=brainStore();
+  const name=cls.name+" d"+(ai.bestDepth+1)+" life"+(ai.episodes+1)+" #"+(Object.keys(store).length+1);
+  store[name]={brain:ai.brain,eps:ai.eps,episodes:ai.episodes,bestDepth:ai.bestDepth,cls:cls.name};
+  try{localStorage.setItem("df_brains",JSON.stringify(store));pushMsg('Brain saved as "'+name+'".');}catch(e){pushMsg("Could not save (storage unavailable).");}
+  refreshBrainList();
+};
+document.getElementById("btn-load-brain").onclick=()=>{
+  const k=document.getElementById("brain-list").value;
+  if(!k)return;
+  const rec=brainStore()[k];
+  if(!rec)return;
+  ai.brain=rec.brain;ai.target=nfCopy(rec.brain);ai.eps=Math.max(0.05,rec.eps);ai.episodes=rec.episodes;ai.bestDepth=rec.bestDepth;ai.name=k;ai.buffer=[];
+  pushMsg('Loaded brain "'+k+'".');aiInfo();
+};
+document.getElementById("btn-fresh-brain").onclick=()=>{
+  ai.brain=null;aiEnsureBrain();ai.episodes=0;ai.bestDepth=0;ai.buffer=[];
+  pushMsg("A fresh rookie brain takes over.");aiInfo();
+};
+document.getElementById("btn-ai").onclick=()=>{
+  ai.mode=ai.mode==="off"?"learning":ai.mode==="learning"?"playing":"off";
+  document.getElementById("btn-ai").textContent="AI: "+(ai.mode==="off"?"off":ai.mode);
+  if(ai.mode!=="off")aiEnsureBrain();
+  if(ai.mode==="off"&&hp<=0){state="dead";document.getElementById("dead").style.display="flex";}
+  aiInfo();
+};
+const aspd=document.getElementById("ai-speed");
+aspd.oninput=()=>{ai.sps=parseInt(aspd.value,10);document.getElementById("ai-speed-out").textContent=ai.sps+"/s";};
 const cv=document.getElementById("cv"),ctx=cv.getContext("2d"),DPR=window.devicePixelRatio||1;
 function drawPortrait(c,cl){
   const x=c.getContext("2d"),w=c.width,h=c.height;
-  x.clearRect(0,0,w,h);
   x.fillStyle="#1a1a22";x.fillRect(0,0,w,h);
   x.fillStyle="#c89b6c";x.beginPath();x.arc(w/2,h*0.46,w*0.17,0,7);x.fill();
   x.fillStyle=cl.color;
@@ -194,7 +474,7 @@ function buildSelect(){
   sel.innerHTML="";
   CLASSES.forEach((cl,i)=>{
     const d=document.createElement("div");d.className="card";
-    d.innerHTML='<canvas width="120" height="120" style="border-radius:8px;"></canvas><div style="font-weight:500;margin:8px 0 2px;">'+cl.name+'</div><div style="font-size:12px;opacity:0.75;">'+cl.blurb+'</div><div style="font-size:12px;margin-top:6px;">HP '+cl.hp+' - sight '+cl.cone+' - light '+cl.light.toFixed(1)+'</div>';
+    d.innerHTML='<canvas width="120" height="120" style="border-radius:8px;"></canvas><div style="font-weight:500;margin:8px 0 2px;">'+cl.name+'</div><div style="font-size:12px;opacity:0.75;">'+cl.blurb+'</div><div style="font-size:12px;margin-top:6px;">HP '+cl.hp+' - ATK '+cl.atk+' - DEF '+cl.def+' - sight '+cl.cone+'</div>';
     d.onclick=()=>startGame(i);
     sel.appendChild(d);
     drawPortrait(d.querySelector("canvas"),cl);
@@ -202,38 +482,52 @@ function buildSelect(){
 }
 function startGame(i){
   cls=CLASSES[i];hp=cls.hp;gold=0;depth=0;fx=1;fy=0;state="play";
+  atkB=0;defB=0;potions=1;cd=0;
+  arrows=cls.name==="Ranger"?12:0;
+  mana=cls.name==="Mage"?12:0;
+  msgs=[];floaters=[];shots=[];
   document.getElementById("select").style.display="none";
   document.getElementById("stage").style.display="";
   document.getElementById("pad").style.display="flex";
   document.getElementById("hud").style.display="flex";
+  document.getElementById("log").style.display="";
+  document.getElementById("airow").style.display="flex";
   document.getElementById("dead").style.display="none";
-  genLevel();updateHud();cv.focus();
+  pushMsg("You enter the abandoned manor. Find the stairs down.");
+  genLevel();updateHud();cv.focus();refreshBrainList();
 }
 document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";
   document.getElementById("select").style.display="flex";
   document.getElementById("stage").style.display="none";
   document.getElementById("pad").style.display="none";
-  document.getElementById("hud").style.display="none";};
+  document.getElementById("hud").style.display="none";
+  document.getElementById("log").style.display="none";
+  document.getElementById("airow").style.display="none";};
 document.querySelectorAll("#pad [data-mv]").forEach(b=>{
   const mv=b.getAttribute("data-mv").split(",");
-  b.onclick=()=>playerAct(parseInt(mv[0],10),parseInt(mv[1],10));
+  b.onclick=()=>{if(ai.mode==="off")playerAct(parseInt(mv[0],10),parseInt(mv[1],10));};
 });
-document.getElementById("btn-wait").onclick=()=>{if(state==="play"){monstersTurn();computeVis();updateHud();}};
+document.getElementById("btn-ability").onclick=()=>{if(ai.mode==="off")ability();};
+document.getElementById("btn-potion").onclick=()=>{if(ai.mode==="off")drinkPotion();};
+document.getElementById("btn-wait").onclick=()=>{if(state==="play"&&ai.mode==="off")endTurn();};
 document.getElementById("btn-map").onclick=()=>showMap=!showMap;
 document.addEventListener("keydown",e=>{
-  if(state!=="play")return;
+  if(state!=="play"||ai.mode!=="off")return;
   const k=e.key.toLowerCase();
   const map={arrowup:[0,-1],w:[0,-1],arrowdown:[0,1],s:[0,1],arrowleft:[-1,0],a:[-1,0],arrowright:[1,0],d:[1,0]};
   if(map[k]){e.preventDefault();playerAct(map[k][0],map[k][1]);}
-  else if(k===" "){e.preventDefault();monstersTurn();computeVis();updateHud();}
+  else if(k===" "){e.preventDefault();endTurn();}
+  else if(k==="f"){e.preventDefault();ability();}
+  else if(k==="q"){e.preventDefault();drinkPotion();}
   else if(k==="m"){showMap=!showMap;}
 });
 function draw(t){
   const w=cv.getBoundingClientRect().width,h=Math.round(w*TH/TW);
+  if(w<10)return;
   if(cv.width!==Math.round(w*DPR)){cv.width=Math.round(w*DPR);cv.height=Math.round(h*DPR);cv.style.height=h+"px";}
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.fillStyle="#111118";ctx.fillRect(0,0,w,h);
-  if(state==="select"){requestAnimationFrame(draw);return;}
+  if(state==="select")return;
   const ts=w/TW,flick=0.85+0.15*Math.sin(t/120+Math.sin(t/77));
   for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
     const id=idx(x,y),vis=visCache.has(id),exp=explored[id];
@@ -262,21 +556,43 @@ function draw(t){
   }
   for(const m of monsters){
     m.vx+=(m.x-m.vx)*0.4;m.vy+=(m.y-m.vy)*0.4;
+    if(m.flash>0)m.flash-=0.1;
     if(!visCache.has(idx(m.x,m.y)))continue;
     const X=m.vx*ts+ts/2,Y=m.vy*ts+ts/2;
+    if(m.flash>0){ctx.fillStyle="rgba(255,255,255,"+(m.flash*0.5).toFixed(2)+")";ctx.beginPath();ctx.arc(X,Y,ts*0.34,0,7);ctx.fill();}
     if(m.skel){ctx.fillStyle="#d8d8e0";ctx.beginPath();ctx.arc(X,Y-2,ts*0.22,0,7);ctx.fill();
       ctx.fillStyle="#111";ctx.fillRect(X-3,Y-4,2,2);ctx.fillRect(X+1,Y-4,2,2);
       ctx.fillStyle="#d8d8e0";ctx.fillRect(X-ts*0.18,Y+2,ts*0.36,2);}
     else{ctx.fillStyle="#8a8a92";ctx.beginPath();ctx.ellipse(X,Y,ts*0.26,ts*0.17,0,0,7);ctx.fill();
       ctx.strokeStyle="#8a8a92";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(X+ts*0.24,Y);ctx.quadraticCurveTo(X+ts*0.4,Y+2,X+ts*0.42,Y-2);ctx.stroke();
       ctx.fillStyle="#E24B4A";ctx.fillRect(X-ts*0.16,Y-3,2,2);}
+    if(m.hp<m.maxhp){ctx.fillStyle="#333";ctx.fillRect(X-ts*0.25,Y-ts*0.42,ts*0.5,2.5);
+      ctx.fillStyle="#E24B4A";ctx.fillRect(X-ts*0.25,Y-ts*0.42,ts*0.5*(m.hp/m.maxhp),2.5);}
   }
+  for(const s of shots){
+    s.age+=0.12;
+    if(s.age>1)continue;
+    ctx.strokeStyle=s.c;ctx.globalAlpha=1-s.age;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(s.x0*ts+ts/2,s.y0*ts+ts/2);ctx.lineTo(s.x1*ts+ts/2,s.y1*ts+ts/2);ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  shots=shots.filter(s=>s.age<=1);
   vx+=(px-vx)*0.4;vy+=(py-vy)*0.4;
   const PX=vx*ts+ts/2,PY=vy*ts+ts/2;
   ctx.fillStyle="rgba(240,180,80,"+(0.06*flick).toFixed(3)+")";
   ctx.beginPath();ctx.arc(PX,PY,cls.light*ts,0,7);ctx.fill();
   ctx.fillStyle=cls.color;ctx.beginPath();ctx.arc(PX,PY,ts*0.32,0,7);ctx.fill();
   ctx.fillStyle="#f5e6d0";ctx.beginPath();ctx.arc(PX+fx*ts*0.16,PY+fy*ts*0.16,ts*0.1,0,7);ctx.fill();
+  if(ai.mode!=="off"){ctx.strokeStyle="#378ADD";ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(PX,PY,ts*0.45,0,7);ctx.stroke();}
+  for(const f of floaters){
+    f.age+=0.03;
+    if(f.age>1)continue;
+    ctx.fillStyle=f.c;ctx.globalAlpha=1-f.age;
+    ctx.font="500 12px sans-serif";ctx.textAlign="center";
+    ctx.fillText(f.txt,f.x*ts+ts/2,f.y*ts-f.age*14+ts*0.2);
+    ctx.globalAlpha=1;
+  }
+  floaters=floaters.filter(f=>f.age<=1);
   if(showMap){
     const mw=TW*3,mh=TH*3,MX=w-mw-10,MY=10;
     ctx.fillStyle="rgba(10,10,16,0.85)";ctx.fillRect(MX-4,MY-4,mw+8,mh+8);
@@ -290,10 +606,25 @@ function draw(t){
     ctx.fillStyle=cls.color;ctx.fillRect(MX+px*3-1,MY+py*3-1,5,5);
   }
 }
-function frame(t){draw(t);requestAnimationFrame(frame);}
+let lastT=performance.now(),acc=0;
+function frame(t){
+  const dt=Math.min(0.1,(t-lastT)/1000);lastT=t;
+  if(state==="play"&&ai.mode!=="off"){
+    acc+=dt*ai.sps;let guard=0;
+    while(acc>=1&&guard<60){aiTick();acc-=1;guard++;}
+  }
+  draw(t);
+  requestAnimationFrame(frame);
+}
 buildSelect();
 requestAnimationFrame(frame);
-setInterval(()=>draw(performance.now()),250);
+setInterval(()=>{
+  const stalled=performance.now()-lastT>400;
+  if(stalled){
+    if(state==="play"&&ai.mode!=="off"){for(let i=0;i<Math.max(1,Math.round(ai.sps/4));i++)aiTick();}
+    draw(performance.now());
+  }
+},250);
 </script>
 </body>
 </html>
