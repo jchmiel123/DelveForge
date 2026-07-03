@@ -5,38 +5,52 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DelveForge</title>
 <style>
-:root{color-scheme:light dark;}
-body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0 10px;background:Canvas;color:CanvasText;}
-button{font:inherit;font-size:13px;padding:5px 10px;border-radius:8px;border:1px solid #8886;background:transparent;color:inherit;cursor:pointer;}
-button:hover{background:#8882;}
-select{font:inherit;font-size:13px;padding:4px;border-radius:8px;border:1px solid #8886;background:transparent;color:inherit;}
-.card{border:1px solid #8886;border-radius:12px;padding:12px;cursor:pointer;text-align:center;flex:1;}
-.card:hover{border-color:#888;}
+body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0 10px;background:var(--df-bg,#14141b);color:var(--df-text,#e8e4d8);}
+#df-root{background:var(--df-bg);color:var(--df-text);border-radius:14px;}
+#df-root button{font:inherit;font-size:13px;padding:5px 10px;border-radius:8px;border:1px solid var(--df-border);background:var(--df-panel);color:var(--df-text);cursor:pointer;}
+#df-root button:hover{background:var(--df-panel2);border-color:var(--df-accent);}
+#df-root select{font:inherit;font-size:13px;padding:4px 6px;border-radius:8px;border:1px solid var(--df-border);background:var(--df-panel);color:var(--df-text);}
+#df-root option{background:var(--df-panel);color:var(--df-text);}
+#df-root input[type=range]{accent-color:var(--df-accent);}
+.card{border:1px solid var(--df-border);border-radius:12px;padding:12px;cursor:pointer;text-align:center;flex:1;background:var(--df-panel);}
+.card:hover{border-color:var(--df-accent);}
 </style>
 </head>
 <body>
 <div id="df-root"></div>
 <script>
 const DF_ROOT=document.getElementById("df-root");
+const THEMES={
+ dark:{bg:"#14141b",panel:"#1d1d27",panel2:"#262633",text:"#e8e4d8",muted:"#9a96a8",border:"#3a3a4a",accent:"#EF9F27",danger:"#E24B4A"},
+ light:{bg:"#f2efe6",panel:"#ffffff",panel2:"#e9e5d8",text:"#2c2c34",muted:"#6a6a76",border:"#c9c5b8",accent:"#9a6a10",danger:"#A32D2D"}};
+let themeName="dark";
+try{themeName=localStorage.getItem("df_theme")||"dark";}catch(e){}
+function applyTheme(){
+  const T=THEMES[themeName]||THEMES.dark;
+  for(const k of Object.keys(T))DF_ROOT.style.setProperty("--df-"+k,T[k]);
+  document.body&&document.body.style.setProperty("--df-bg",T.bg);
+  const tb=document.getElementById("btn-theme");
+  if(tb)tb.textContent=themeName==="dark"?"Theme: dark":"Theme: light";
+}
 DF_ROOT.innerHTML=`
 <div id="hud" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 6px;font-size:14px;">
   <span id="h-class" style="font-weight:500;"></span>
   <span id="h-hp"></span>
-  <span id="h-stats" style="font-size:13px;opacity:0.8;"></span>
-  <span id="h-gold" style="color:#BA7517;"></span>
+  <span id="h-stats" style="font-size:13px;color:var(--df-muted);"></span>
+  <span id="h-gold" style="color:var(--df-accent);"></span>
   <span id="h-depth"></span>
-  <span style="margin-left:auto;font-size:12px;opacity:0.6;" id="h-seed"></span>
+  <span style="margin-left:auto;font-size:12px;color:var(--df-muted);" id="h-seed"></span>
 </div>
 <div id="select" style="display:flex;gap:12px;align-items:stretch;"></div>
 <div id="stage" style="position:relative;display:none;">
-  <canvas id="cv" tabindex="0" style="width:100%;display:block;border:1px solid #8886;border-radius:12px;outline:none;"></canvas>
+  <canvas id="cv" tabindex="0" style="width:100%;display:block;border:1px solid var(--df-border);border-radius:12px;outline:none;"></canvas>
   <div id="dead" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(10,10,14,0.75);border-radius:12px;color:#eee;">
     <div style="font-size:22px;">You have fallen</div>
     <div id="dead-sub" style="font-size:14px;opacity:0.8;"></div>
     <button id="btn-again" style="color:#eee;">Rise again</button>
   </div>
 </div>
-<div id="log" style="display:none;font-size:12.5px;opacity:0.8;min-height:3.2em;margin:6px 2px;line-height:1.35;"></div>
+<div id="log" style="display:none;font-size:12.5px;color:var(--df-muted);min-height:3.2em;margin:6px 2px;line-height:1.35;"></div>
 <div id="pad" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 0;">
   <button data-mv="0,-1" aria-label="Move up">&#9650;</button>
   <button data-mv="0,1" aria-label="Move down">&#9660;</button>
@@ -46,24 +60,26 @@ DF_ROOT.innerHTML=`
   <button id="btn-potion">Potion (Q)</button>
   <button id="btn-wait">Wait</button>
   <button id="btn-map">Map (M)</button>
-  <span style="font-size:11.5px;opacity:0.55;margin-left:auto;">arrows/WASD - click the dungeon first</span>
+  <span style="font-size:11.5px;color:var(--df-muted);margin-left:auto;">arrows/WASD - click the dungeon first</span>
 </div>
-<div id="airow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;padding:8px 10px;border:1px solid #8886;border-radius:10px;">
+<div id="airow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel);">
   <button id="btn-ai" style="font-weight:500;">AI: off</button>
-  <span id="ai-info" style="font-size:12px;opacity:0.75;"></span>
+  <span id="ai-info" style="font-size:12px;color:var(--df-muted);"></span>
   <input type="range" id="ai-speed" min="1" max="40" value="12" step="1" style="width:100px;" aria-label="AI steps per second"/>
-  <span id="ai-speed-out" style="font-size:12px;opacity:0.7;">12/s</span>
+  <span id="ai-speed-out" style="font-size:12px;color:var(--df-muted);">12/s</span>
   <span style="margin-left:auto;"></span>
   <button id="btn-save-brain">Save brain</button>
   <select id="brain-list" aria-label="Saved brains"><option value="">saved brains...</option></select>
   <button id="btn-load-brain">Load</button>
+  <button id="btn-del-brain">Delete</button>
   <button id="btn-fresh-brain">Fresh</button>
 </div>
-<div id="monrow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 0;padding:8px 10px;border:1px solid #8886;border-radius:10px;">
+<div id="monrow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 0;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel);">
   <button id="btn-mon-ai" style="font-weight:500;">Monsters: learning</button>
-  <span id="mon-info" style="font-size:12px;opacity:0.75;"></span>
+  <span id="mon-info" style="font-size:12px;color:var(--df-muted);"></span>
   <span style="margin-left:auto;"></span>
   <button id="btn-mon-fresh">Forget everything</button>
+  <button id="btn-theme">Theme: dark</button>
 </div>`;
 const TW=40,TH=26,WALL=0,FLOOR=1,STAIRS=3,CHEST=5,CHESTO=6;
 const LEVELS=["The abandoned manor","The cellars","The catacombs","The deep halls","The old mine","The ember depths"];
@@ -456,7 +472,7 @@ function aiTick(){
   if(state!=="play")return;
   aiEnsureBrain();
   const s0=sensor();
-  const explore=ai.mode==="learning"&&Math.random()<ai.eps;
+  const explore=ai.mode==="training"&&Math.random()<ai.eps;
   const q=nfForward(ai.brain,s0);
   const a=explore?Math.floor(Math.random()*ACTN):nfArgmax(q);
   evt={gold:0,kill:0,chest:0,dmg:0,descend:false,died:false};
@@ -466,7 +482,7 @@ function aiTick(){
   if(evt.descend)r+=8;
   if(evt.died)r-=10;
   const done=evt.died;
-  if(ai.mode==="learning"){
+  if(ai.mode==="training"){
     const s1=done?null:sensor();
     ai.buffer.push([s0,a,r,s1,done]);
     if(ai.buffer.length>4000)ai.buffer.shift();
@@ -483,7 +499,7 @@ function aiTick(){
     ai.eps=Math.max(0.05,ai.eps*0.99993);
   }
   if(done){
-    if(ai.mode==="learning")ai.eps=Math.max(0.05,ai.eps*0.98);
+    if(ai.mode==="training")ai.eps=Math.max(0.05,ai.eps*0.98);
     aiRespawn();
   }
   evt=null;
@@ -516,7 +532,7 @@ function aiMove(dx,dy){
 function aiInfo(){
   const el=document.getElementById("ai-info");
   if(ai.mode==="off"){el.textContent="";return;}
-  el.textContent=ai.name+" - life "+(ai.episodes+1)+" - best depth "+(ai.bestDepth+1)+(ai.mode==="learning"?" - explore "+Math.round(ai.eps*100)+"%":" - frozen");
+  el.textContent=ai.name+" - life "+(ai.episodes+1)+" - best depth "+(ai.bestDepth+1)+(ai.mode==="training"?" - explore "+Math.round(ai.eps*100)+"%":" - frozen: best moves only, no learning");
 }
 function brainStore(){try{return JSON.parse(localStorage.getItem("df_brains")||"{}");}catch(e){return {};}}
 function refreshBrainList(){
@@ -541,12 +557,28 @@ document.getElementById("btn-load-brain").onclick=()=>{
   ai.brain=rec.brain;ai.target=nfCopy(rec.brain);ai.eps=Math.max(0.05,rec.eps);ai.episodes=rec.episodes;ai.bestDepth=rec.bestDepth;ai.name=k;ai.buffer=[];
   pushMsg('Loaded brain "'+k+'".');aiInfo();
 };
+document.getElementById("btn-del-brain").onclick=()=>{
+  const k=document.getElementById("brain-list").value;
+  if(!k){pushMsg("Pick a brain to delete first.");return;}
+  const store=brainStore();
+  delete store[k];
+  try{localStorage.setItem("df_brains",JSON.stringify(store));}catch(e){}
+  if(ai.name===k)ai.name="fresh rookie (was "+k+")";
+  pushMsg('Deleted brain "'+k+'".');
+  document.getElementById("brain-list").value="";
+  refreshBrainList();aiInfo();
+};
+document.getElementById("btn-theme").onclick=()=>{
+  themeName=themeName==="dark"?"light":"dark";
+  try{localStorage.setItem("df_theme",themeName);}catch(e){}
+  applyTheme();
+};
 document.getElementById("btn-fresh-brain").onclick=()=>{
   ai.brain=null;aiEnsureBrain();ai.episodes=0;ai.bestDepth=0;ai.buffer=[];
   pushMsg("A fresh rookie brain takes over.");aiInfo();
 };
 document.getElementById("btn-ai").onclick=()=>{
-  ai.mode=ai.mode==="off"?"learning":ai.mode==="learning"?"playing":"off";
+  ai.mode=ai.mode==="off"?"training":ai.mode==="training"?"frozen":"off";
   document.getElementById("btn-ai").textContent="AI: "+(ai.mode==="off"?"off":ai.mode);
   if(ai.mode!=="off")aiEnsureBrain();
   if(ai.mode==="off"&&hp<=0){state="dead";document.getElementById("dead").style.display="flex";}
@@ -653,16 +685,40 @@ function draw(t){
     if(!vis&&!exp)continue;
     const g=grid[id],X=x*ts,Y=y*ts;
     if(g===WALL){
-      ctx.fillStyle=vis?"#2b2b38":"#1c1c26";ctx.fillRect(X,Y,ts,ts);
-      ctx.fillStyle=vis?"#3a3a4c":"#22222e";ctx.fillRect(X,Y,ts,2);
+      ctx.fillStyle=vis?"#2e2e3c":"#1d1d28";ctx.fillRect(X,Y,ts,ts);
+      ctx.fillStyle=vis?"#40405422":"#25253022";ctx.fillRect(X,Y,ts,2);
+      ctx.strokeStyle=vis?"rgba(0,0,0,0.35)":"rgba(0,0,0,0.22)";ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.moveTo(X,Y+ts*0.5);ctx.lineTo(X+ts,Y+ts*0.5);
+      const joff=((x+y)%2)?ts*0.33:ts*0.66;
+      ctx.moveTo(X+joff,Y);ctx.lineTo(X+joff,Y+ts*0.5);
+      ctx.moveTo(X+ts-joff,Y+ts*0.5);ctx.lineTo(X+ts-joff,Y+ts);
+      ctx.stroke();
+      ctx.fillStyle=vis?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.02)";ctx.fillRect(X,Y,ts,1.5);
     }else{
-      ctx.fillStyle=vis?"#413c4e":"#26232e";ctx.fillRect(X,Y,ts,ts);
-      if(vis&&litSet.has(id)){ctx.fillStyle="rgba(240,160,60,"+(0.10*flick).toFixed(3)+")";ctx.fillRect(X,Y,ts,ts);}
-      if(g===STAIRS){ctx.fillStyle=vis?"#151519":"#1a1a20";ctx.fillRect(X+2,Y+2,ts-4,ts-4);
-        ctx.fillStyle="#666";for(let s2=0;s2<3;s2++)ctx.fillRect(X+3+s2*2,Y+ts-4-s2*3,ts-6-s2*4,2);}
-      if(g===CHEST&&vis){ctx.fillStyle="#8a5a20";ctx.fillRect(X+3,Y+ts*0.35,ts-6,ts*0.5);
-        ctx.fillStyle="#EF9F27";ctx.fillRect(X+3,Y+ts*0.5,ts-6,2);}
-      if(g===CHESTO&&vis){ctx.strokeStyle="#8a5a20";ctx.lineWidth=1.5;ctx.strokeRect(X+3,Y+ts*0.35,ts-6,ts*0.5);}
+      ctx.fillStyle=vis?"#3f3a4b":"#25222d";ctx.fillRect(X,Y,ts,ts);
+      if((x*7+y*13)%5===0){ctx.fillStyle="rgba(255,255,255,0.04)";ctx.fillRect(X+ts*0.28,Y+ts*0.55,2,2);}
+      if((x*11+y*3)%7===0){ctx.fillStyle="rgba(0,0,0,0.2)";ctx.fillRect(X+ts*0.6,Y+ts*0.22,2.5,2);}
+      if(vis&&litSet.has(id)){ctx.fillStyle="rgba(240,160,60,"+(0.11*flick).toFixed(3)+")";ctx.fillRect(X,Y,ts,ts);}
+      if(g===STAIRS){
+        ctx.fillStyle="#0d0d12";ctx.fillRect(X+2,Y+2,ts-4,ts-4);
+        ctx.strokeStyle=vis?"#a89e5a":"#5a5640";ctx.lineWidth=1.6;ctx.lineJoin="round";
+        for(let s2=0;s2<3;s2++){
+          const yy=Y+ts*(0.26+s2*0.2);
+          ctx.beginPath();ctx.moveTo(X+ts*0.3,yy);ctx.lineTo(X+ts*0.5,yy+ts*0.12);ctx.lineTo(X+ts*0.7,yy);ctx.stroke();
+        }
+      }
+      if(g===CHEST&&vis){
+        ctx.fillStyle="#7a4e1c";ctx.fillRect(X+3,Y+ts*0.3,ts-6,ts*0.55);
+        ctx.fillStyle="#9a6428";ctx.fillRect(X+3,Y+ts*0.3,ts-6,ts*0.2);
+        ctx.fillStyle="#EF9F27";ctx.fillRect(X+3,Y+ts*0.52,ts-6,2);
+        ctx.beginPath();ctx.arc(X+ts/2,Y+ts*0.58,2.2,0,7);ctx.fill();
+      }
+      if(g===CHESTO&&vis){
+        ctx.fillStyle="#241608";ctx.fillRect(X+3,Y+ts*0.42,ts-6,ts*0.42);
+        ctx.strokeStyle="#7a4e1c";ctx.lineWidth=1.5;ctx.strokeRect(X+3,Y+ts*0.42,ts-6,ts*0.42);
+        ctx.strokeStyle="#9a6428";ctx.beginPath();ctx.moveTo(X+3,Y+ts*0.42);ctx.lineTo(X+ts/2,Y+ts*0.18);ctx.lineTo(X+ts-3,Y+ts*0.42);ctx.stroke();
+      }
     }
   }
   for(const tc of torches){
@@ -679,12 +735,24 @@ function draw(t){
     if(!visCache.has(idx(m.x,m.y)))continue;
     const X=m.vx*ts+ts/2,Y=m.vy*ts+ts/2;
     if(m.flash>0){ctx.fillStyle="rgba(255,255,255,"+(m.flash*0.5).toFixed(2)+")";ctx.beginPath();ctx.arc(X,Y,ts*0.34,0,7);ctx.fill();}
-    if(m.skel){ctx.fillStyle="#d8d8e0";ctx.beginPath();ctx.arc(X,Y-2,ts*0.22,0,7);ctx.fill();
-      ctx.fillStyle="#111";ctx.fillRect(X-3,Y-4,2,2);ctx.fillRect(X+1,Y-4,2,2);
-      ctx.fillStyle="#d8d8e0";ctx.fillRect(X-ts*0.18,Y+2,ts*0.36,2);}
-    else{ctx.fillStyle="#8a8a92";ctx.beginPath();ctx.ellipse(X,Y,ts*0.26,ts*0.17,0,0,7);ctx.fill();
-      ctx.strokeStyle="#8a8a92";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(X+ts*0.24,Y);ctx.quadraticCurveTo(X+ts*0.4,Y+2,X+ts*0.42,Y-2);ctx.stroke();
-      ctx.fillStyle="#E24B4A";ctx.fillRect(X-ts*0.16,Y-3,2,2);}
+    if(m.skel){
+      ctx.strokeStyle="#e2e2ea";ctx.lineWidth=1.4;ctx.lineCap="round";
+      ctx.beginPath();ctx.moveTo(X,Y-ts*0.02);ctx.lineTo(X,Y+ts*0.28);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(X-ts*0.14,Y+ts*0.06);ctx.lineTo(X+ts*0.14,Y+ts*0.06);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(X-ts*0.11,Y+ts*0.15);ctx.lineTo(X+ts*0.11,Y+ts*0.15);ctx.stroke();
+      ctx.fillStyle="#e2e2ea";ctx.beginPath();ctx.arc(X,Y-ts*0.16,ts*0.15,0,7);ctx.fill();
+      ctx.fillRect(X-ts*0.08,Y-ts*0.04,ts*0.16,ts*0.06);
+      ctx.fillStyle="#16161c";ctx.fillRect(X-ts*0.09,Y-ts*0.2,2.6,2.6);ctx.fillRect(X+ts*0.035,Y-ts*0.2,2.6,2.6);
+    }else{
+      const fdir=px>=m.x?1:-1;
+      ctx.strokeStyle="#8d8d96";ctx.lineWidth=1.3;ctx.lineCap="round";
+      ctx.beginPath();ctx.moveTo(X-fdir*ts*0.24,Y+1);ctx.quadraticCurveTo(X-fdir*ts*0.42,Y+4,X-fdir*ts*0.46,Y-3);ctx.stroke();
+      ctx.fillStyle="#8d8d96";
+      ctx.beginPath();ctx.ellipse(X-fdir*ts*0.03,Y+2,ts*0.21,ts*0.14,0,0,7);ctx.fill();
+      ctx.beginPath();ctx.arc(X+fdir*ts*0.19,Y-1,ts*0.11,0,7);ctx.fill();
+      ctx.beginPath();ctx.arc(X+fdir*ts*0.13,Y-ts*0.13,ts*0.05,0,7);ctx.fill();
+      ctx.fillStyle="#E24B4A";ctx.beginPath();ctx.arc(X+fdir*ts*0.22,Y-2,1.4,0,7);ctx.fill();
+    }
     if(m.hp<m.maxhp){ctx.fillStyle="#333";ctx.fillRect(X-ts*0.25,Y-ts*0.42,ts*0.5,2.5);
       ctx.fillStyle="#E24B4A";ctx.fillRect(X-ts*0.25,Y-ts*0.42,ts*0.5*(m.hp/m.maxhp),2.5);}
     if(monAI.on){ctx.strokeStyle="rgba(226,75,74,0.55)";ctx.lineWidth=1;ctx.beginPath();ctx.arc(X,Y,ts*0.38,0,7);ctx.stroke();}
@@ -703,6 +771,16 @@ function draw(t){
   ctx.beginPath();ctx.arc(PX,PY,cls.light*ts,0,7);ctx.fill();
   ctx.fillStyle=cls.color;ctx.beginPath();ctx.arc(PX,PY,ts*0.32,0,7);ctx.fill();
   ctx.fillStyle="#f5e6d0";ctx.beginPath();ctx.arc(PX+fx*ts*0.16,PY+fy*ts*0.16,ts*0.1,0,7);ctx.fill();
+  if(cls.name==="Warrior"){
+    ctx.strokeStyle="#c8ccd4";ctx.lineWidth=2.2;
+    ctx.beginPath();ctx.arc(PX,PY,ts*0.33,Math.PI*1.15,Math.PI*1.85);ctx.stroke();
+  }else if(cls.name==="Ranger"){
+    ctx.strokeStyle="#b08d57";ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.arc(PX-fx*ts*0.34,PY-fy*ts*0.34,ts*0.2,0,7);ctx.stroke();
+  }else{
+    ctx.fillStyle="#EF9F27";
+    ctx.beginPath();ctx.moveTo(PX,PY-ts*0.5);ctx.lineTo(PX+3,PY-ts*0.36);ctx.lineTo(PX-3,PY-ts*0.36);ctx.closePath();ctx.fill();
+  }
   if(ai.mode!=="off"){ctx.strokeStyle="#378ADD";ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(PX,PY,ts*0.45,0,7);ctx.stroke();}
   for(const f of floaters){
     f.age+=0.03;
@@ -736,6 +814,7 @@ function frame(t){
   draw(t);
   requestAnimationFrame(frame);
 }
+applyTheme();
 buildSelect();
 requestAnimationFrame(frame);
 setInterval(()=>{
