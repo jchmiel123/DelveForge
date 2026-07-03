@@ -1,0 +1,299 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DelveForge</title>
+<style>
+:root{color-scheme:light dark;}
+body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0 10px;background:Canvas;color:CanvasText;}
+button{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid #8886;background:transparent;color:inherit;cursor:pointer;}
+button:hover{background:#8882;}
+.card{border:1px solid #8886;border-radius:12px;padding:12px;cursor:pointer;text-align:center;flex:1;}
+.card:hover{border-color:#888;}
+</style>
+</head>
+<body>
+<div id="df-root"></div>
+<script>
+const DF_ROOT=document.getElementById("df-root");
+DF_ROOT.innerHTML=`
+<div id="hud" style="display:none;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 8px;font-size:14px;">
+  <span id="h-class" style="font-weight:500;"></span>
+  <span id="h-hp"></span>
+  <span id="h-gold" style="color:#BA7517;"></span>
+  <span id="h-depth"></span>
+  <span style="margin-left:auto;font-size:12px;opacity:0.6;" id="h-seed"></span>
+</div>
+<div id="select" style="display:flex;gap:12px;align-items:stretch;"></div>
+<div id="stage" style="position:relative;display:none;">
+  <canvas id="cv" tabindex="0" style="width:100%;display:block;border:1px solid #8886;border-radius:12px;outline:none;"></canvas>
+  <div id="dead" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(10,10,14,0.75);border-radius:12px;color:#eee;">
+    <div style="font-size:22px;">You have fallen</div>
+    <div id="dead-sub" style="font-size:14px;opacity:0.8;"></div>
+    <button id="btn-again" style="color:#eee;">Rise again</button>
+  </div>
+</div>
+<div id="pad" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;">
+  <button data-mv="0,-1" aria-label="Move up">&#9650;</button>
+  <button data-mv="0,1" aria-label="Move down">&#9660;</button>
+  <button data-mv="-1,0" aria-label="Move left">&#9664;</button>
+  <button data-mv="1,0" aria-label="Move right">&#9654;</button>
+  <button id="btn-wait">Wait</button>
+  <button id="btn-map">Map</button>
+  <span style="font-size:12px;opacity:0.6;margin-left:auto;">arrows/WASD move, space waits, M map - click the dungeon first</span>
+</div>`;
+const TW=40,TH=26,WALL=0,FLOOR=1,STAIRS=3,CHEST=5,CHESTO=6;
+const LEVELS=["The abandoned manor","The cellars","The catacombs","The deep halls","The old mine","The ember depths"];
+const CLASSES=[
+ {name:"Warrior",color:"#D85A30",hp:14,atk:3,light:3.2,cone:5,blurb:"Heavy steel. Short sight, hits like a forge."},
+ {name:"Ranger",color:"#639922",hp:10,atk:2,light:3.0,cone:7,blurb:"Keen eyes. Sees far down dark halls."},
+ {name:"Mage",color:"#7F77DD",hp:8,atk:2,light:4.6,cone:5,blurb:"Bright aura. Fragile, but the dark retreats."}];
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+let baseSeed=Math.floor(Math.random()*1e9),rng=mulberry32(baseSeed);
+function R(){return rng();}
+function ri(n){return Math.floor(R()*n);}
+let cls=null,depth=0,grid,rooms,torches,monsters,explored,litSet,px,py,fx=1,fy=0,hp,gold,vx,vy,showMap=false,state="select",visCache=new Set();
+function idx(x,y){return y*TW+x;}
+function inB(x,y){return x>=0&&x<TW&&y>=0&&y<TH;}
+function genLevel(){
+  rng=mulberry32(baseSeed+depth*7919);
+  grid=new Uint8Array(TW*TH);rooms=[];torches=[];monsters=[];explored=new Uint8Array(TW*TH);
+  for(let t=0;t<80&&rooms.length<9;t++){
+    const w=4+ri(7),h=3+ri(4),x=1+ri(TW-w-2),y=1+ri(TH-h-2);
+    let ok=true;
+    for(const r of rooms)if(x<r.x+r.w+1&&r.x<x+w+1&&y<r.y+r.h+1&&r.y<y+h+1){ok=false;break;}
+    if(!ok)continue;
+    rooms.push({x:x,y:y,w:w,h:h});
+    for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++)grid[idx(i,j)]=FLOOR;
+  }
+  for(let r=1;r<rooms.length;r++){
+    const a=rooms[r-1],b=rooms[r];
+    let x0=a.x+ri(a.w),y0=a.y+ri(a.h),x1=b.x+ri(b.w),y1=b.y+ri(b.h);
+    while(x0!==x1){grid[idx(x0,y0)]=grid[idx(x0,y0)]||FLOOR;x0+=x0<x1?1:-1;}
+    while(y0!==y1){grid[idx(x0,y0)]=grid[idx(x0,y0)]||FLOOR;y0+=y0<y1?1:-1;}
+    grid[idx(x1,y1)]=grid[idx(x1,y1)]||FLOOR;
+  }
+  for(const r of rooms){
+    const n=1+ri(2);
+    for(let k=0;k<n;k++)torches.push([r.x+ri(r.w),r.y===0?r.y:r.y+ri(r.h)]);
+  }
+  for(let c=0;c<3;c++){const r=rooms[1+ri(rooms.length-1)];grid[idx(r.x+ri(r.w),r.y+ri(r.h))]=CHEST;}
+  const last=rooms[rooms.length-1];
+  grid[idx(last.x+(last.w>>1),last.y+(last.h>>1))]=STAIRS;
+  px=rooms[0].x+(rooms[0].w>>1);py=rooms[0].y+(rooms[0].h>>1);vx=px;vy=py;
+  grid[idx(px,py)]=FLOOR;
+  const nMon=3+depth;
+  for(let m=0;m<nMon;m++){
+    const r=rooms[1+ri(rooms.length-1)];
+    const mx=r.x+ri(r.w),my=r.y+ri(r.h);
+    if(grid[idx(mx,my)]!==FLOOR)continue;
+    const skel=depth>=2&&R()<0.5;
+    monsters.push({x:mx,y:my,vx:mx,vy:my,hp:skel?4:2,atk:skel?2:1,skel:skel});
+  }
+  litSet=new Set();
+  for(const t of torches)for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
+    if(Math.hypot(x-t[0],y-t[1])<=3&&los(t[0],t[1],x,y))litSet.add(idx(x,y));
+  }
+  computeVis();
+}
+function los(x0,y0,x1,y1){
+  let dx=Math.abs(x1-x0),dy=Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1,err=dx-dy,x=x0,y=y0;
+  while(!(x===x1&&y===y1)){
+    if(!(x===x0&&y===y0)&&grid[idx(x,y)]===WALL)return false;
+    const e2=2*err;
+    if(e2>-dy){err-=dy;x+=sx;}
+    if(e2<dx){err+=dx;y+=sy;}
+  }
+  return true;
+}
+function computeVis(){
+  visCache=new Set();
+  for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
+    const dx=x-px,dy=y-py,d=Math.hypot(dx,dy);
+    const f=dx*fx+dy*fy,l=dx*(-fy)+dy*fx;
+    const inCone=f>=0&&f<=cls.cone&&Math.abs(l)<=1+f*0.7;
+    const nearRing=Math.abs(dx)<=1&&Math.abs(dy)<=1;
+    if(!inCone&&!nearRing)continue;
+    if(!los(px,py,x,y))continue;
+    const lit=d<=cls.light||litSet.has(idx(x,y));
+    if(lit){visCache.add(idx(x,y));explored[idx(x,y)]=1;}
+  }
+  visCache.add(idx(px,py));explored[idx(px,py)]=1;
+}
+function monsterAt(x,y){for(const m of monsters)if(m.x===x&&m.y===y)return m;return null;}
+function walkable(x,y){const t=grid[idx(x,y)];return inB(x,y)&&t!==WALL&&t!==CHEST;}
+function playerAct(dx,dy){
+  if(state!=="play")return;
+  fx=dx;fy=dy;
+  const nx=px+dx,ny=py+dy;
+  if(inB(nx,ny)){
+    const m=monsterAt(nx,ny);
+    const t=grid[idx(nx,ny)];
+    if(m){
+      m.hp-=cls.atk+(R()<0.3?1:0);
+      if(m.hp<=0){monsters.splice(monsters.indexOf(m),1);gold+=m.skel?3:1;}
+    }else if(t===CHEST){
+      grid[idx(nx,ny)]=CHESTO;gold+=5+ri(6)+depth*3;
+    }else if(walkable(nx,ny)){
+      px=nx;py=ny;
+      if(t===STAIRS){depth++;hp=Math.min(cls.hp,hp+3);genLevel();updateHud();return;}
+    }
+  }
+  monstersTurn();computeVis();updateHud();
+}
+function monstersTurn(){
+  for(const m of monsters){
+    const d=Math.max(Math.abs(m.x-px),Math.abs(m.y-py));
+    if(d<=1){hp-=m.atk;continue;}
+    let sx=0,sy=0;
+    if(Math.hypot(m.x-px,m.y-py)<8&&los(m.x,m.y,px,py)){
+      sx=Math.sign(px-m.x);sy=Math.sign(py-m.y);
+      if(Math.abs(m.x-px)<Math.abs(m.y-py))sx=0;else sy=0;
+    }else if(R()<0.4){const dirs=[[0,-1],[0,1],[-1,0],[1,0]];const dd=dirs[ri(4)];sx=dd[0];sy=dd[1];}
+    const nx=m.x+sx,ny=m.y+sy;
+    if((sx||sy)&&walkable(nx,ny)&&!monsterAt(nx,ny)&&!(nx===px&&ny===py)){m.x=nx;m.y=ny;}
+  }
+  if(hp<=0){state="dead";
+    document.getElementById("dead-sub").textContent="Depth "+(depth+1)+" - "+gold+" gold - seed "+baseSeed;
+    document.getElementById("dead").style.display="flex";
+  }
+}
+function updateHud(){
+  document.getElementById("h-class").textContent=cls.name;
+  document.getElementById("h-hp").textContent="HP "+Math.max(0,hp)+"/"+cls.hp;
+  document.getElementById("h-hp").style.color=hp<=cls.hp/3?"#E24B4A":"inherit";
+  document.getElementById("h-gold").textContent=gold+" gold";
+  document.getElementById("h-depth").textContent=(LEVELS[Math.min(depth,LEVELS.length-1)])+" ("+(depth+1)+")";
+  document.getElementById("h-seed").textContent="seed "+baseSeed;
+}
+const cv=document.getElementById("cv"),ctx=cv.getContext("2d"),DPR=window.devicePixelRatio||1;
+function drawPortrait(c,cl){
+  const x=c.getContext("2d"),w=c.width,h=c.height;
+  x.clearRect(0,0,w,h);
+  x.fillStyle="#1a1a22";x.fillRect(0,0,w,h);
+  x.fillStyle="#c89b6c";x.beginPath();x.arc(w/2,h*0.46,w*0.17,0,7);x.fill();
+  x.fillStyle=cl.color;
+  x.beginPath();x.moveTo(w*0.28,h*0.95);x.quadraticCurveTo(w/2,h*0.55,w*0.72,h*0.95);x.closePath();x.fill();
+  if(cl.name==="Warrior"){
+    x.fillStyle="#9aa0a8";x.beginPath();x.arc(w/2,h*0.42,w*0.19,Math.PI,0);x.fill();
+    x.fillRect(w*0.31,h*0.42,w*0.38,h*0.06);
+    x.strokeStyle="#D85A30";x.lineWidth=4;x.beginPath();x.moveTo(w/2,h*0.22);x.quadraticCurveTo(w*0.62,h*0.18,w*0.6,h*0.3);x.stroke();
+  }else if(cl.name==="Ranger"){
+    x.fillStyle="#4a6d1a";x.beginPath();x.moveTo(w*0.3,h*0.5);x.quadraticCurveTo(w/2,h*0.1,w*0.7,h*0.5);x.quadraticCurveTo(w/2,h*0.4,w*0.3,h*0.5);x.fill();
+    x.strokeStyle="#b08d57";x.lineWidth=3;x.beginPath();x.arc(w*0.78,h*0.55,w*0.16,-1.2,1.2);x.stroke();
+    x.beginPath();x.moveTo(w*0.78+w*0.16*Math.cos(-1.2),h*0.55+w*0.16*Math.sin(-1.2));x.lineTo(w*0.78+w*0.16*Math.cos(1.2),h*0.55+w*0.16*Math.sin(1.2));x.stroke();
+  }else{
+    x.fillStyle="#534AB7";x.beginPath();x.moveTo(w*0.3,h*0.36);x.lineTo(w/2,h*0.08);x.lineTo(w*0.7,h*0.36);x.closePath();x.fill();
+    x.strokeStyle="#b08d57";x.lineWidth=3;x.beginPath();x.moveTo(w*0.24,h*0.9);x.lineTo(w*0.24,h*0.35);x.stroke();
+    x.fillStyle="#EF9F27";x.beginPath();x.arc(w*0.24,h*0.3,4,0,7);x.fill();
+  }
+}
+function buildSelect(){
+  const sel=document.getElementById("select");
+  sel.innerHTML="";
+  CLASSES.forEach((cl,i)=>{
+    const d=document.createElement("div");d.className="card";
+    d.innerHTML='<canvas width="120" height="120" style="border-radius:8px;"></canvas><div style="font-weight:500;margin:8px 0 2px;">'+cl.name+'</div><div style="font-size:12px;opacity:0.75;">'+cl.blurb+'</div><div style="font-size:12px;margin-top:6px;">HP '+cl.hp+' - sight '+cl.cone+' - light '+cl.light.toFixed(1)+'</div>';
+    d.onclick=()=>startGame(i);
+    sel.appendChild(d);
+    drawPortrait(d.querySelector("canvas"),cl);
+  });
+}
+function startGame(i){
+  cls=CLASSES[i];hp=cls.hp;gold=0;depth=0;fx=1;fy=0;state="play";
+  document.getElementById("select").style.display="none";
+  document.getElementById("stage").style.display="";
+  document.getElementById("pad").style.display="flex";
+  document.getElementById("hud").style.display="flex";
+  document.getElementById("dead").style.display="none";
+  genLevel();updateHud();cv.focus();
+}
+document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";
+  document.getElementById("select").style.display="flex";
+  document.getElementById("stage").style.display="none";
+  document.getElementById("pad").style.display="none";
+  document.getElementById("hud").style.display="none";};
+document.querySelectorAll("#pad [data-mv]").forEach(b=>{
+  const mv=b.getAttribute("data-mv").split(",");
+  b.onclick=()=>playerAct(parseInt(mv[0],10),parseInt(mv[1],10));
+});
+document.getElementById("btn-wait").onclick=()=>{if(state==="play"){monstersTurn();computeVis();updateHud();}};
+document.getElementById("btn-map").onclick=()=>showMap=!showMap;
+document.addEventListener("keydown",e=>{
+  if(state!=="play")return;
+  const k=e.key.toLowerCase();
+  const map={arrowup:[0,-1],w:[0,-1],arrowdown:[0,1],s:[0,1],arrowleft:[-1,0],a:[-1,0],arrowright:[1,0],d:[1,0]};
+  if(map[k]){e.preventDefault();playerAct(map[k][0],map[k][1]);}
+  else if(k===" "){e.preventDefault();monstersTurn();computeVis();updateHud();}
+  else if(k==="m"){showMap=!showMap;}
+});
+function draw(t){
+  const w=cv.getBoundingClientRect().width,h=Math.round(w*TH/TW);
+  if(cv.width!==Math.round(w*DPR)){cv.width=Math.round(w*DPR);cv.height=Math.round(h*DPR);cv.style.height=h+"px";}
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle="#111118";ctx.fillRect(0,0,w,h);
+  if(state==="select"){requestAnimationFrame(draw);return;}
+  const ts=w/TW,flick=0.85+0.15*Math.sin(t/120+Math.sin(t/77));
+  for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
+    const id=idx(x,y),vis=visCache.has(id),exp=explored[id];
+    if(!vis&&!exp)continue;
+    const g=grid[id],X=x*ts,Y=y*ts;
+    if(g===WALL){
+      ctx.fillStyle=vis?"#2b2b38":"#1c1c26";ctx.fillRect(X,Y,ts,ts);
+      ctx.fillStyle=vis?"#3a3a4c":"#22222e";ctx.fillRect(X,Y,ts,2);
+    }else{
+      ctx.fillStyle=vis?"#413c4e":"#26232e";ctx.fillRect(X,Y,ts,ts);
+      if(vis&&litSet.has(id)){ctx.fillStyle="rgba(240,160,60,"+(0.10*flick).toFixed(3)+")";ctx.fillRect(X,Y,ts,ts);}
+      if(g===STAIRS){ctx.fillStyle=vis?"#151519":"#1a1a20";ctx.fillRect(X+2,Y+2,ts-4,ts-4);
+        ctx.fillStyle="#666";for(let s2=0;s2<3;s2++)ctx.fillRect(X+3+s2*2,Y+ts-4-s2*3,ts-6-s2*4,2);}
+      if(g===CHEST&&vis){ctx.fillStyle="#8a5a20";ctx.fillRect(X+3,Y+ts*0.35,ts-6,ts*0.5);
+        ctx.fillStyle="#EF9F27";ctx.fillRect(X+3,Y+ts*0.5,ts-6,2);}
+      if(g===CHESTO&&vis){ctx.strokeStyle="#8a5a20";ctx.lineWidth=1.5;ctx.strokeRect(X+3,Y+ts*0.35,ts-6,ts*0.5);}
+    }
+  }
+  for(const tc of torches){
+    const id=idx(tc[0],tc[1]);
+    if(!visCache.has(id)&&!explored[id])continue;
+    const X=tc[0]*ts+ts/2,Y=tc[1]*ts+ts*0.3;
+    ctx.fillStyle="#6b4a2a";ctx.fillRect(X-1,Y,2,ts*0.35);
+    if(visCache.has(id)){ctx.fillStyle="rgba(255,"+(150+Math.floor(60*flick))+",50,0.95)";
+      ctx.beginPath();ctx.arc(X,Y-1,2.5*flick+1,0,7);ctx.fill();}
+  }
+  for(const m of monsters){
+    m.vx+=(m.x-m.vx)*0.4;m.vy+=(m.y-m.vy)*0.4;
+    if(!visCache.has(idx(m.x,m.y)))continue;
+    const X=m.vx*ts+ts/2,Y=m.vy*ts+ts/2;
+    if(m.skel){ctx.fillStyle="#d8d8e0";ctx.beginPath();ctx.arc(X,Y-2,ts*0.22,0,7);ctx.fill();
+      ctx.fillStyle="#111";ctx.fillRect(X-3,Y-4,2,2);ctx.fillRect(X+1,Y-4,2,2);
+      ctx.fillStyle="#d8d8e0";ctx.fillRect(X-ts*0.18,Y+2,ts*0.36,2);}
+    else{ctx.fillStyle="#8a8a92";ctx.beginPath();ctx.ellipse(X,Y,ts*0.26,ts*0.17,0,0,7);ctx.fill();
+      ctx.strokeStyle="#8a8a92";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(X+ts*0.24,Y);ctx.quadraticCurveTo(X+ts*0.4,Y+2,X+ts*0.42,Y-2);ctx.stroke();
+      ctx.fillStyle="#E24B4A";ctx.fillRect(X-ts*0.16,Y-3,2,2);}
+  }
+  vx+=(px-vx)*0.4;vy+=(py-vy)*0.4;
+  const PX=vx*ts+ts/2,PY=vy*ts+ts/2;
+  ctx.fillStyle="rgba(240,180,80,"+(0.06*flick).toFixed(3)+")";
+  ctx.beginPath();ctx.arc(PX,PY,cls.light*ts,0,7);ctx.fill();
+  ctx.fillStyle=cls.color;ctx.beginPath();ctx.arc(PX,PY,ts*0.32,0,7);ctx.fill();
+  ctx.fillStyle="#f5e6d0";ctx.beginPath();ctx.arc(PX+fx*ts*0.16,PY+fy*ts*0.16,ts*0.1,0,7);ctx.fill();
+  if(showMap){
+    const mw=TW*3,mh=TH*3,MX=w-mw-10,MY=10;
+    ctx.fillStyle="rgba(10,10,16,0.85)";ctx.fillRect(MX-4,MY-4,mw+8,mh+8);
+    for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
+      const id=idx(x,y);
+      if(!explored[id])continue;
+      const g=grid[id];
+      ctx.fillStyle=g===WALL?"#333":g===STAIRS?"#EF9F27":"#6a6a7a";
+      ctx.fillRect(MX+x*3,MY+y*3,3,3);
+    }
+    ctx.fillStyle=cls.color;ctx.fillRect(MX+px*3-1,MY+py*3-1,5,5);
+  }
+}
+function frame(t){draw(t);requestAnimationFrame(frame);}
+buildSelect();
+requestAnimationFrame(frame);
+setInterval(()=>draw(performance.now()),250);
+</script>
+</body>
+</html>
