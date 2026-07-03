@@ -391,7 +391,11 @@ function monTrainAll(){
     for(let n=0;n<6;n++){
       const e=S.buffer[Math.floor(Math.random()*S.buffer.length)];
       const tq=nfForward(S.brain,e[0]).slice();
-      tq[e[1]]=e[4]?e[2]:e[2]+0.92*Math.max.apply(null,nfForward(S.target,e[3]));
+      if(e[4])tq[e[1]]=e[2];
+      else{
+        const bi=nfArgmax(nfForward(S.brain,e[3]));
+        tq[e[1]]=e[2]+0.92*nfForward(S.target,e[3])[bi];
+      }
       nfTrain(S.brain,e[0],tq,0.006);
     }
     if(S.steps%400<6)S.target=nfCopy(S.brain);
@@ -482,20 +486,18 @@ function nfForward(b,x){
 }
 function nfArgmax(a){let bi=0;for(let i=1;i<a.length;i++)if(a[i]>a[bi])bi=i;return bi;}
 function nfTrain(b,x,t,lr){
-  let cur=x;const A=[x];
-  for(const L of b){
-    const out=[];
-    for(let i=0;i<L.w.length;i++){let s=L.b[i];const row=L.w[i];for(let j=0;j<row.length;j++)s+=row[j]*cur[j];out.push(L.a==="tanh"?Math.tanh(s):s);}
-    A.push(out);cur=out;
+  const A=nfForwardAll(b,x),L=b.length;
+  let g=A[L].map((o,i)=>nfClip(2*(o-t[i])/A[L].length));
+  for(let li=L-1;li>=0;li--){
+    const layer=b[li],ain=A[li];
+    const gin=new Array(ain.length).fill(0);
+    for(let j=0;j<ain.length;j++){let s=0;for(let i=0;i<layer.w.length;i++)s+=layer.w[i][j]*g[i];gin[j]=s;}
+    for(let i=0;i<layer.w.length;i++){const gi=g[i],row=layer.w[i];for(let j=0;j<ain.length;j++)row[j]-=lr*gi*ain[j];layer.b[i]-=lr*gi;}
+    if(li>0)g=gin.map((v,j)=>nfClip(v*(b[li-1].a==="tanh"?1-A[li][j]*A[li][j]:1)));
   }
-  const a1=A[1],out=A[2],nH=a1.length,nO=out.length;
-  const g2=out.map((o,i)=>nfClip(2*(o-t[i])/nO));
-  const g1raw=new Array(nH).fill(0);
-  for(let j=0;j<nH;j++){let s=0;for(let i=0;i<nO;i++)s+=b[1].w[i][j]*g2[i];g1raw[j]=s;}
-  for(let i=0;i<nO;i++){const g=g2[i],row=b[1].w[i];for(let j=0;j<nH;j++)row[j]-=lr*g*a1[j];b[1].b[i]-=lr*g;}
-  for(let i=0;i<nH;i++){const g=nfClip(g1raw[i]*(1-a1[i]*a1[i])),row=b[0].w[i];for(let j=0;j<x.length;j++)row[j]-=lr*g*x[j];b[0].b[i]-=lr*g;}
 }
-const SENSN=19,ACTN=4;
+const SENSN=26,ACTN=7;
+const ALBL=["up","down","left","right","ability","potion","scroll"];
 let lastActs=null,lastChosen=0,lastExplore=false,brainView=false;
 const ai={mode:"off",brain:null,target:null,eps:1.0,buffer:[],steps:0,episodes:0,bestDepth:0,sps:12,name:"fresh rookie"};
 function sensor(){
@@ -521,10 +523,16 @@ function sensor(){
     sd=1/(1+Math.abs(tx-px)+Math.abs(ty-py));
   }
   v.push(sx,sy,sd,seen,hp/maxHp(),Math.min(1,depth/6),1);
+  let adj=0;
+  for(const m of monsters)if(Math.abs(m.x-px)<=1&&Math.abs(m.y-py)<=1)adj++;
+  const res=cls.name==="Ranger"?Math.min(1,arrows/12):cls.name==="Mage"?mana/12:(cd===0?1:0);
+  v.push(Math.min(1,inv.potion/3),inv.scroll>0?1:0,res,lightTimer>0?1:0,weapon.atk/4,armor.def/3,Math.min(1,adj/3));
   return v;
 }
+function brainIn(b){return b[0].w[0].length;}
+function brainOut(b){return b[b.length-1].b.length;}
 function aiEnsureBrain(){
-  if(!ai.brain){ai.brain=nfRandom([SENSN,24,ACTN]);ai.target=nfCopy(ai.brain);ai.eps=1.0;ai.name="fresh rookie";}
+  if(!ai.brain){ai.brain=nfRandom([SENSN,32,16,ACTN]);ai.target=nfCopy(ai.brain);ai.eps=1.0;ai.name="fresh rookie (Mk II)";}
 }
 function aiRespawn(){
   ai.episodes++;
@@ -535,32 +543,75 @@ function aiRespawn(){
   hp=maxHp();gold=0;depth=0;arrows=cls.name==="Ranger"?12:0;mana=cls.name==="Mage"?12:0;cd=0;
   genLevel();updateHud();
 }
+function turnUpkeep(){
+  if(cd>0)cd--;
+  if(lightTimer>0)lightTimer--;
+  if(cls.name==="Mage")mana=Math.min(12,mana+1);
+  monstersTurn();
+  const fresh=computeVis();
+  updateHud();
+  return fresh;
+}
+function aiUse(a){
+  let wasted=false;
+  if(a===4){
+    if(cls.name==="Warrior"){
+      let hit=0;
+      if(cd===0){for(const m of monsters.slice())if(Math.abs(m.x-px)<=1&&Math.abs(m.y-py)<=1){hitMonster(m,atk()+1,"Smite");hit++;}}
+      if(hit>0)cd=6;else wasted=true;
+    }else{
+      const tgt=nearestVisibleMonster(cls.name==="Ranger"?7:5);
+      if(cls.name==="Ranger"&&tgt&&arrows>0){arrows--;shots.push({x0:px,y0:py,x1:tgt.x,y1:tgt.y,age:0,c:"#9FE1CB"});hitMonster(tgt,atk()+2,"The arrow");}
+      else if(cls.name==="Mage"&&tgt&&mana>=3){mana-=3;shots.push({x0:px,y0:py,x1:tgt.x,y1:tgt.y,age:0,c:"#AFA9EC"});hitMonster(tgt,4,"The bolt");}
+      else wasted=true;
+    }
+  }else if(a===5){
+    if(inv.potion>0&&hp<maxHp()){inv.potion--;hp=Math.min(maxHp(),hp+6);floatTxt(px,py,"+6","#9FE1CB");}
+    else wasted=true;
+  }else{
+    if(inv.scroll>0&&lightTimer<=0){inv.scroll--;lightTimer=40;floatTxt(px,py,"light!","#AFA9EC");}
+    else wasted=true;
+  }
+  return wasted;
+}
 function aiTick(){
   if(state!=="play")return;
   aiEnsureBrain();
-  const s0=sensor();
+  const nIn=brainIn(ai.brain),nOut=brainOut(ai.brain);
+  const sFull=sensor(),s0=sFull.slice(0,nIn);
   const explore=ai.mode==="training"&&Math.random()<ai.eps;
   const learning=ai.mode==="training"||ai.mode==="playing";
   const allActs=nfForwardAll(ai.brain,s0);
-  const q=allActs[2];
-  const a=explore?Math.floor(Math.random()*ACTN):nfArgmax(q);
+  const q=allActs[allActs.length-1];
+  const a=explore?Math.floor(Math.random()*nOut):nfArgmax(q);
   lastActs=allActs;lastChosen=a;lastExplore=explore;
   evt={gold:0,kill:0,chest:0,dmg:0,descend:false,died:false};
-  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
-  const fresh=aiMove(dirs[a][0],dirs[a][1]);
+  let fresh=0,wasted=false;
+  if(a<4){
+    const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+    fresh=aiMove(dirs[a][0],dirs[a][1]);
+  }else{
+    wasted=aiUse(a);
+    fresh=turnUpkeep();
+  }
   let r=-0.02+fresh*0.05+evt.kill*2+evt.chest*1+evt.gold*0.05-evt.dmg*0.5;
+  if(wasted)r-=0.05;
   if(evt.descend)r+=8;
   if(evt.died)r-=10;
   const done=evt.died;
   if(learning){
-    const s1=done?null:sensor();
+    const s1=done?null:sensor().slice(0,nIn);
     ai.buffer.push([s0,a,r,s1,done]);
     if(ai.buffer.length>4000)ai.buffer.shift();
     if(ai.buffer.length>=12){
       for(let n=0;n<12;n++){
         const e=ai.buffer[Math.floor(Math.random()*ai.buffer.length)];
         const tq=nfForward(ai.brain,e[0]).slice();
-        tq[e[1]]=e[4]?e[2]:e[2]+0.95*Math.max.apply(null,nfForward(ai.target,e[3]));
+        if(e[4])tq[e[1]]=e[2];
+        else{
+          const bi=nfArgmax(nfForward(ai.brain,e[3]));
+          tq[e[1]]=e[2]+0.95*nfForward(ai.target,e[3])[bi];
+        }
         nfTrain(ai.brain,e[0],tq,0.008);
       }
     }
@@ -592,17 +643,13 @@ function aiMove(dx,dy){
       }
     }
   }
-  if(cd>0)cd--;
-  if(cls.name==="Mage")mana=Math.min(12,mana+1);
-  monstersTurn();
-  const fresh=computeVis();
-  updateHud();
-  return fresh;
+  return turnUpkeep();
 }
 function aiInfo(){
   const el=document.getElementById("ai-info");
   if(ai.mode==="off"){el.textContent="";return;}
-  el.textContent=ai.name+" - life "+(ai.episodes+1)+" - best depth "+(ai.bestDepth+1)+(ai.mode==="training"?" - explore "+Math.round(ai.eps*100)+"%":ai.mode==="playing"?" - careful, still learning":" - locked: brain as-is");
+  const mk=ai.brain&&brainOut(ai.brain)>=7?"Mk II":"Mk I";
+  el.textContent=ai.name+" ["+mk+"] - life "+(ai.episodes+1)+" - best depth "+(ai.bestDepth+1)+(ai.mode==="training"?" - explore "+Math.round(ai.eps*100)+"%":ai.mode==="playing"?" - careful, still learning":" - locked: brain as-is");
 }
 function brainStore(){try{return JSON.parse(localStorage.getItem("df_brains")||"{}");}catch(e){return {};}}
 function refreshBrainList(){
@@ -650,7 +697,7 @@ document.getElementById("btn-theme").onclick=()=>{
 };
 document.getElementById("btn-fresh-brain").onclick=()=>{
   ai.brain=null;aiEnsureBrain();ai.episodes=0;ai.bestDepth=0;ai.buffer=[];
-  pushMsg("A fresh rookie brain takes over.");aiInfo();
+  pushMsg("A fresh Mk II rookie takes over (deeper brain, item actions).");aiInfo();
 };
 document.getElementById("btn-ai").onclick=()=>{
   ai.mode=ai.mode==="off"?"training":ai.mode==="training"?"playing":ai.mode==="playing"?"locked":"off";
@@ -884,25 +931,26 @@ function draw(t){
   }
 }
 const ncv=document.getElementById("netcv"),ntx=ncv.getContext("2d");
-const NLBL=["up","down","left","right"];
 function drawNet(){
   if(!brainView||state!=="play")return;
   if(!ai.brain){aiEnsureBrain();}
-  if(!lastActs||ai.mode==="off")lastActs=nfForwardAll(ai.brain,sensor());
+  if(!lastActs||ai.mode==="off")lastActs=nfForwardAll(ai.brain,sensor().slice(0,brainIn(ai.brain)));
   const w=290,h=180;
   if(ncv.width!==Math.round(w*DPR)){ncv.width=Math.round(w*DPR);ncv.height=Math.round(h*DPR);}
   ntx.setTransform(DPR,0,0,DPR,0,0);ntx.clearRect(0,0,w,h);
-  const inn=[],hid=[],out=[];
-  for(let i=0;i<19;i++)inn.push([18,10+i*(h-20)/18]);
-  for(let i=0;i<24;i++)hid.push([w/2,8+i*(h-16)/23]);
-  for(let i=0;i<4;i++)out.push([w-56,h/2+(i-1.5)*(h/4.6)]);
-  const P=[inn,hid,out];
-  for(let li=0;li<2;li++){
+  const cols=lastActs.length,P=[];
+  for(let c=0;c<cols;c++){
+    const n=lastActs[c].length,col=[];
+    const x=c===cols-1?w-62:18+c*(w-92)/(cols-1);
+    for(let i=0;i<n;i++)col.push([x,8+i*(h-16)/Math.max(1,n-1)]);
+    P.push(col);
+  }
+  for(let li=0;li<ai.brain.length;li++){
     const W2=ai.brain[li].w,srcA=lastActs[li],A=P[li],B=P[li+1];
     for(let i=0;i<W2.length;i++)for(let j=0;j<W2[i].length;j++){
-      const c=W2[i][j]*srcA[j],al=Math.min(0.75,Math.abs(c)*0.55);
-      if(al<0.05)continue;
-      ntx.strokeStyle=c>0?"#1D9E75":"#D85A30";ntx.globalAlpha=al;ntx.lineWidth=Math.min(2,0.35+Math.abs(c)*0.6);
+      const c=W2[i][j]*srcA[j],al=Math.min(0.7,Math.abs(c)*0.5);
+      if(al<0.06)continue;
+      ntx.strokeStyle=c>0?"#1D9E75":"#D85A30";ntx.globalAlpha=al;ntx.lineWidth=Math.min(1.8,0.3+Math.abs(c)*0.5);
       ntx.beginPath();ntx.moveTo(A[j][0],A[j][1]);ntx.lineTo(B[i][0],B[i][1]);ntx.stroke();
     }
   }
@@ -913,19 +961,18 @@ function drawNet(){
     ntx.beginPath();ntx.arc(x,y,r,0,7);ntx.fill();
     ntx.strokeStyle="rgba(160,160,175,0.6)";ntx.lineWidth=0.7;ntx.beginPath();ntx.arc(x,y,r,0,7);ntx.stroke();
   }
-  for(let i=0;i<19;i++)node(inn[i][0],inn[i][1],3.4,lastActs[0][i]);
-  for(let i=0;i<24;i++)node(hid[i][0],hid[i][1],3,lastActs[1][i]);
-  const omax=Math.max.apply(null,lastActs[2].map(Math.abs))||1;
-  ntx.font="11px sans-serif";ntx.textBaseline="middle";ntx.textAlign="left";
-  for(let i=0;i<4;i++){
-    node(out[i][0],out[i][1],6.5,lastActs[2][i]/omax);
+  for(let c=0;c<cols-1;c++)for(let i=0;i<lastActs[c].length;i++)node(P[c][i][0],P[c][i][1],c===0?3.2:2.8,lastActs[c][i]);
+  const outA=lastActs[cols-1],omax=Math.max.apply(null,outA.map(Math.abs))||1;
+  ntx.font="10.5px sans-serif";ntx.textBaseline="middle";ntx.textAlign="left";
+  for(let i=0;i<outA.length;i++){
+    node(P[cols-1][i][0],P[cols-1][i][1],5.5,outA[i]/omax);
     if(i===lastChosen){
       ntx.strokeStyle="#EF9F27";ntx.lineWidth=1.8;
       if(lastExplore)ntx.setLineDash([3,3]);
-      ntx.beginPath();ntx.arc(out[i][0],out[i][1],9.5,0,7);ntx.stroke();ntx.setLineDash([]);
+      ntx.beginPath();ntx.arc(P[cols-1][i][0],P[cols-1][i][1],8.5,0,7);ntx.stroke();ntx.setLineDash([]);
     }
     ntx.fillStyle="#c9c5d4";
-    ntx.fillText(NLBL[i],out[i][0]+13,out[i][1]);
+    ntx.fillText(ALBL[i]||String(i),P[cols-1][i][0]+11,P[cols-1][i][1]);
   }
 }
 let lastT=performance.now(),acc=0;
