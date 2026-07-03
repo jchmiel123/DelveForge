@@ -44,6 +44,9 @@ DF_ROOT.innerHTML=`
 <div id="select" style="display:flex;gap:12px;align-items:stretch;"></div>
 <div id="stage" style="position:relative;display:none;">
   <canvas id="cv" tabindex="0" style="width:100%;display:block;border:1px solid var(--df-border);border-radius:12px;outline:none;"></canvas>
+  <div id="brainbox" style="position:absolute;top:8px;right:8px;display:none;background:rgba(14,14,22,0.9);border:1px solid var(--df-border);border-radius:8px;padding:4px;">
+    <canvas id="netcv" style="display:block;width:290px;height:180px;"></canvas>
+  </div>
   <div id="dead" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(10,10,14,0.75);border-radius:12px;color:#eee;">
     <div style="font-size:22px;">You have fallen</div>
     <div id="dead-sub" style="font-size:14px;opacity:0.8;"></div>
@@ -51,6 +54,10 @@ DF_ROOT.innerHTML=`
   </div>
 </div>
 <div id="log" style="display:none;font-size:12.5px;color:var(--df-muted);min-height:3.2em;margin:6px 2px;line-height:1.35;"></div>
+<div id="invrow" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 6px;font-size:12.5px;">
+  <span id="inv-equip" style="color:var(--df-muted);"></span>
+  <span id="inv-items" style="display:inline-flex;gap:6px;flex-wrap:wrap;"></span>
+</div>
 <div id="pad" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 0;">
   <button data-mv="0,-1" aria-label="Move up">&#9650;</button>
   <button data-mv="0,1" aria-label="Move down">&#9660;</button>
@@ -70,6 +77,7 @@ DF_ROOT.innerHTML=`
   <span style="margin-left:auto;"></span>
   <button id="btn-save-brain">Save brain</button>
   <select id="brain-list" aria-label="Saved brains"><option value="">saved brains...</option></select>
+  <button id="btn-brain-view">Show brain</button>
   <button id="btn-load-brain">Load</button>
   <button id="btn-del-brain">Delete</button>
   <button id="btn-fresh-brain">Fresh</button>
@@ -92,7 +100,10 @@ let baseSeed=Math.floor(Math.random()*1e9),rng=mulberry32(baseSeed);
 function R(){return rng();}
 function ri(n){return Math.floor(R()*n);}
 let cls=null,depth=0,grid,rooms,torches,monsters,explored,litSet,px,py,fx=1,fy=0,hp,gold,vx,vy,showMap=false,state="select",visCache=new Set();
-let atkB=0,defB=0,potions=0,arrows=0,mana=0,cd=0;
+let arrows=0,mana=0,cd=0;
+let level=1,xp=0,weapon={name:"Fists",atk:0},armor={name:"Cloth",def:0},inv={potion:0,scroll:0},lightTimer=0;
+const WEAPONS=[["Dagger",1],["Sword",2],["War axe",3],["Runeblade",4]];
+const ARMORS=[["Leather",1],["Chain",2],["Plate",3]];
 let floaters=[],msgs=[],evt=null;
 function idx(x,y){return y*TW+x;}
 function inB(x,y){return x>=0&&x<TW&&y>=0&&y<TH;}
@@ -160,7 +171,7 @@ function computeVis(){
     const nearRing=Math.abs(dx)<=1&&Math.abs(dy)<=1;
     if(!inCone&&!nearRing)continue;
     if(!los(px,py,x,y))continue;
-    const lit=d<=cls.light||litSet.has(idx(x,y));
+    const lit=d<=lightR()||litSet.has(idx(x,y));
     if(lit){visCache.add(idx(x,y));if(!explored[idx(x,y)])fresh++;explored[idx(x,y)]=1;}
   }
   visCache.add(idx(px,py));explored[idx(px,py)]=1;
@@ -168,7 +179,18 @@ function computeVis(){
 }
 function monsterAt(x,y){for(const m of monsters)if(m.x===x&&m.y===y)return m;return null;}
 function walkable(x,y){const t=grid[idx(x,y)];return inB(x,y)&&t!==WALL&&t!==CHEST;}
-function atk(){return cls.atk+atkB;}
+function atk(){return cls.atk+weapon.atk+Math.floor((level-1)/2);}
+function defTotal(){return cls.def+armor.def;}
+function lightR(){return cls.light+(lightTimer>0?2:0);}
+function gainXp(n){
+  xp+=n;
+  while(xp>=level*10){
+    xp-=level*10;level++;
+    hp=Math.min(maxHp(),hp+4);
+    pushMsg("Level up! You are now level "+level+".");
+    floatTxt(px,py,"LVL "+level,"#EF9F27");
+  }
+}
 function hitMonster(m,dmg,label){
   m.hp-=dmg;m.flash=1;
   floatTxt(m.x,m.y,"-"+dmg,"#F09595");
@@ -176,18 +198,31 @@ function hitMonster(m,dmg,label){
     monDeathLesson(m);
     monsters.splice(monsters.indexOf(m),1);
     const g=m.skel?3:1;gold+=g;
+    gainXp(m.skel?5:2);
+    if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+(m.skel?"skeleton":"rat")+" dropped a potion.");}
     if(evt)evt.kill++;
-    pushMsg(label+" slays the "+(m.skel?"skeleton":"rat")+" (+"+g+" gold).");
+    pushMsg(label+" slays the "+(m.skel?"skeleton":"rat")+" (+"+g+" gold, +"+(m.skel?5:2)+" xp).");
   }else pushMsg(label+" hits the "+(m.skel?"skeleton":"rat")+" for "+dmg+".");
 }
 function lootChest(x,y){
   grid[idx(x,y)]=CHESTO;
   const roll=R();
-  if(roll<0.35){const g=5+ri(6)+depth*3;gold+=g;if(evt)evt.gold+=g;floatTxt(x,y,"+"+g,"#EF9F27");pushMsg("A chest of coins: +"+g+" gold.");}
-  else if(roll<0.55){potions++;floatTxt(x,y,"potion","#F09595");pushMsg("Found a healing potion.");}
-  else if(roll<0.7){arrows+=6;floatTxt(x,y,"+6 arrows","#9FE1CB");pushMsg("A bundle of arrows (+6).");}
-  else if(roll<0.85){atkB++;floatTxt(x,y,"weapon!","#FAC775");pushMsg("A finer weapon! Attack +1 (now "+atk()+").");}
-  else{defB++;floatTxt(x,y,"armor!","#B5D4F4");pushMsg("Sturdy armor! Defense +1 (now "+(cls.def+defB)+").");}
+  if(roll<0.3){const g=5+ri(6)+depth*3;gold+=g;if(evt)evt.gold+=g;floatTxt(x,y,"+"+g,"#EF9F27");pushMsg("A chest of coins: +"+g+" gold.");}
+  else if(roll<0.5){inv.potion++;floatTxt(x,y,"potion","#F09595");pushMsg("Found a healing potion.");}
+  else if(roll<0.62){arrows+=6;floatTxt(x,y,"+6 arrows","#9FE1CB");pushMsg("A bundle of arrows (+6).");}
+  else if(roll<0.74){inv.scroll++;floatTxt(x,y,"scroll","#AFA9EC");pushMsg("A scroll of torchlight.");}
+  else if(roll<0.88){
+    let tier=Math.min(4,1+ri(2)+(depth>=2?ri(2):0));
+    const w=WEAPONS[tier-1];
+    if(w[1]>weapon.atk){weapon={name:w[0],atk:w[1]};floatTxt(x,y,w[0]+"!","#FAC775");pushMsg("You take up the "+w[0].toLowerCase()+" (ATK now "+atk()+").");}
+    else{gold+=3;floatTxt(x,y,"+3","#EF9F27");pushMsg("A "+w[0].toLowerCase()+" - no better than yours. Sold for 3 gold.");}
+  }
+  else{
+    let tier=Math.min(3,1+(depth>=2?ri(2):0)+(R()<0.3?1:0));
+    const a=ARMORS[tier-1];
+    if(a[1]>armor.def){armor={name:a[0],def:a[1]};floatTxt(x,y,a[0]+"!","#B5D4F4");pushMsg("You don the "+a[0].toLowerCase()+" armor (DEF now "+defTotal()+").");}
+    else{gold+=3;floatTxt(x,y,"+3","#EF9F27");pushMsg("Spare "+a[0].toLowerCase()+" armor, no better than yours. Sold for 3 gold.");}
+  }
   if(evt)evt.chest++;
 }
 function playerAct(dx,dy){
@@ -211,7 +246,7 @@ function playerAct(dx,dy){
   }
   endTurn();
 }
-function maxHp(){return cls.hp;}
+function maxHp(){return cls.hp+(level-1)*2;}
 function ability(){
   if(state!=="play")return;
   if(cls.name==="Warrior"){
@@ -244,15 +279,23 @@ function nearestVisibleMonster(range){
   }
   return best;
 }
+function readScroll(){
+  if(state!=="play")return;
+  if(inv.scroll<=0){pushMsg("No scrolls left.");return;}
+  inv.scroll--;lightTimer=40;
+  floatTxt(px,py,"light!","#AFA9EC");pushMsg("The scroll blazes - your light widens for 40 turns.");
+  endTurn();
+}
 function drinkPotion(){
   if(state!=="play")return;
-  if(potions<=0){pushMsg("No potions left.");return;}
-  potions--;hp=Math.min(maxHp(),hp+6);
+  if(inv.potion<=0){pushMsg("No potions left.");return;}
+  inv.potion--;hp=Math.min(maxHp(),hp+6);
   floatTxt(px,py,"+6","#9FE1CB");pushMsg("You drink a potion (+6 HP).");
   endTurn();
 }
 function endTurn(){
   if(cd>0)cd--;
+  if(lightTimer>0)lightTimer--;
   if(cls.name==="Mage")mana=Math.min(12,mana+1);
   monstersTurn();computeVis();updateHud();
 }
@@ -303,7 +346,7 @@ function monDeathLesson(m){
   if(S.deaths%10===0)pushMsg("The "+sp+"s are learning from their dead...");
 }
 function attackPlayer(m){
-  const dmg=Math.max(1,m.atk-(cls.def+defB)+(R()<0.3?1:0));
+  const dmg=Math.max(1,m.atk-defTotal()+(R()<0.3?1:0));
   hp-=dmg;if(evt)evt.dmg+=dmg;
   floatTxt(px,py,"-"+dmg,"#E24B4A");
   pushMsg("The "+(m.skel?"skeleton":"rat")+" hits you for "+dmg+".");
@@ -382,15 +425,27 @@ function monstersTurn(){
     }
   }
 }
+function renderInv(){
+  const eq=document.getElementById("inv-equip"),it=document.getElementById("inv-items");
+  if(!eq)return;
+  eq.textContent="Wielding "+weapon.name.toLowerCase()+" - wearing "+armor.name.toLowerCase()+(lightTimer>0?" - light blazing ("+lightTimer+")":"");
+  let html="";
+  if(inv.potion>0)html+='<button id="inv-potion">Potion x'+inv.potion+' (Q)</button>';
+  if(inv.scroll>0)html+='<button id="inv-scroll">Scroll x'+inv.scroll+' (E)</button>';
+  it.innerHTML=html||'<span style="color:var(--df-muted);">pack is empty</span>';
+  const bp=document.getElementById("inv-potion");if(bp)bp.onclick=()=>{if(ai.mode==="off")drinkPotion();};
+  const bs=document.getElementById("inv-scroll");if(bs)bs.onclick=()=>{if(ai.mode==="off")readScroll();};
+}
 function updateHud(){
   document.getElementById("h-class").textContent=cls.name;
   document.getElementById("h-hp").textContent="HP "+Math.max(0,hp)+"/"+maxHp();
   document.getElementById("h-hp").style.color=hp<=maxHp()/3?"#E24B4A":"inherit";
-  let ex="ATK "+atk()+" DEF "+(cls.def+defB)+" - "+potions+" potions";
+  let ex="LVL "+level+" ("+xp+"/"+(level*10)+" xp) - ATK "+atk()+" DEF "+defTotal();
   if(cls.name==="Ranger")ex+=" - "+arrows+" arrows";
   if(cls.name==="Mage")ex+=" - "+mana+" mana";
   if(cls.name==="Warrior")ex+=cd>0?" - smite in "+cd:" - smite ready";
   document.getElementById("h-stats").textContent=ex;
+  renderInv();
   document.getElementById("h-gold").textContent=gold+" gold";
   document.getElementById("h-depth").textContent=(LEVELS[Math.min(depth,LEVELS.length-1)])+" ("+(depth+1)+")";
   document.getElementById("h-seed").textContent="seed "+baseSeed;
@@ -407,6 +462,15 @@ function nfRandom(sizes){
   return L;
 }
 function nfCopy(b){return JSON.parse(JSON.stringify(b));}
+function nfForwardAll(b,x){
+  const acts=[x];let cur=x;
+  for(const L of b){
+    const out=[];
+    for(let i=0;i<L.w.length;i++){let t=L.b[i];const row=L.w[i];for(let j=0;j<row.length;j++)t+=row[j]*cur[j];out.push(L.a==="tanh"?Math.tanh(t):t);}
+    acts.push(out);cur=out;
+  }
+  return acts;
+}
 function nfForward(b,x){
   let cur=x;
   for(const L of b){
@@ -432,6 +496,7 @@ function nfTrain(b,x,t,lr){
   for(let i=0;i<nH;i++){const g=nfClip(g1raw[i]*(1-a1[i]*a1[i])),row=b[0].w[i];for(let j=0;j<x.length;j++)row[j]-=lr*g*x[j];b[0].b[i]-=lr*g;}
 }
 const SENSN=19,ACTN=4;
+let lastActs=null,lastChosen=0,lastExplore=false,brainView=false;
 const ai={mode:"off",brain:null,target:null,eps:1.0,buffer:[],steps:0,episodes:0,bestDepth:0,sps:12,name:"fresh rookie"};
 function sensor(){
   const dirs=[[0,-1],[0,1],[-1,0],[1,0]],v=[];
@@ -465,7 +530,9 @@ function aiRespawn(){
   ai.episodes++;
   if(depth>ai.bestDepth)ai.bestDepth=depth;
   pushMsg("The "+cls.name.toLowerCase()+" falls at depth "+(depth+1)+". Life "+(ai.episodes+1)+" begins.");
-  hp=maxHp();gold=0;depth=0;atkB=0;defB=0;potions=0;arrows=cls.name==="Ranger"?12:0;mana=cls.name==="Mage"?12:0;cd=0;
+  level=1;xp=0;weapon={name:"Fists",atk:0};armor={name:"Cloth",def:0};
+  inv={potion:0,scroll:0};lightTimer=0;
+  hp=maxHp();gold=0;depth=0;arrows=cls.name==="Ranger"?12:0;mana=cls.name==="Mage"?12:0;cd=0;
   genLevel();updateHud();
 }
 function aiTick(){
@@ -473,8 +540,11 @@ function aiTick(){
   aiEnsureBrain();
   const s0=sensor();
   const explore=ai.mode==="training"&&Math.random()<ai.eps;
-  const q=nfForward(ai.brain,s0);
+  const learning=ai.mode==="training"||ai.mode==="playing";
+  const allActs=nfForwardAll(ai.brain,s0);
+  const q=allActs[2];
   const a=explore?Math.floor(Math.random()*ACTN):nfArgmax(q);
+  lastActs=allActs;lastChosen=a;lastExplore=explore;
   evt={gold:0,kill:0,chest:0,dmg:0,descend:false,died:false};
   const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
   const fresh=aiMove(dirs[a][0],dirs[a][1]);
@@ -482,7 +552,7 @@ function aiTick(){
   if(evt.descend)r+=8;
   if(evt.died)r-=10;
   const done=evt.died;
-  if(ai.mode==="training"){
+  if(learning){
     const s1=done?null:sensor();
     ai.buffer.push([s0,a,r,s1,done]);
     if(ai.buffer.length>4000)ai.buffer.shift();
@@ -496,7 +566,7 @@ function aiTick(){
     }
     ai.steps++;
     if(ai.steps%300===0)ai.target=nfCopy(ai.brain);
-    ai.eps=Math.max(0.05,ai.eps*0.99993);
+    if(ai.mode==="training")ai.eps=Math.max(0.05,ai.eps*0.99993);
   }
   if(done){
     if(ai.mode==="training")ai.eps=Math.max(0.05,ai.eps*0.98);
@@ -532,7 +602,7 @@ function aiMove(dx,dy){
 function aiInfo(){
   const el=document.getElementById("ai-info");
   if(ai.mode==="off"){el.textContent="";return;}
-  el.textContent=ai.name+" - life "+(ai.episodes+1)+" - best depth "+(ai.bestDepth+1)+(ai.mode==="training"?" - explore "+Math.round(ai.eps*100)+"%":" - frozen: best moves only, no learning");
+  el.textContent=ai.name+" - life "+(ai.episodes+1)+" - best depth "+(ai.bestDepth+1)+(ai.mode==="training"?" - explore "+Math.round(ai.eps*100)+"%":ai.mode==="playing"?" - careful, still learning":" - locked: brain as-is");
 }
 function brainStore(){try{return JSON.parse(localStorage.getItem("df_brains")||"{}");}catch(e){return {};}}
 function refreshBrainList(){
@@ -548,6 +618,11 @@ document.getElementById("btn-save-brain").onclick=()=>{
   store[name]={brain:ai.brain,eps:ai.eps,episodes:ai.episodes,bestDepth:ai.bestDepth,cls:cls.name};
   try{localStorage.setItem("df_brains",JSON.stringify(store));pushMsg('Brain saved as "'+name+'".');}catch(e){pushMsg("Could not save (storage unavailable).");}
   refreshBrainList();
+};
+document.getElementById("btn-brain-view").onclick=()=>{
+  brainView=!brainView;
+  document.getElementById("brainbox").style.display=brainView?"":"none";
+  document.getElementById("btn-brain-view").textContent=brainView?"Hide brain":"Show brain";
 };
 document.getElementById("btn-load-brain").onclick=()=>{
   const k=document.getElementById("brain-list").value;
@@ -578,7 +653,7 @@ document.getElementById("btn-fresh-brain").onclick=()=>{
   pushMsg("A fresh rookie brain takes over.");aiInfo();
 };
 document.getElementById("btn-ai").onclick=()=>{
-  ai.mode=ai.mode==="off"?"training":ai.mode==="training"?"frozen":"off";
+  ai.mode=ai.mode==="off"?"training":ai.mode==="training"?"playing":ai.mode==="playing"?"locked":"off";
   document.getElementById("btn-ai").textContent="AI: "+(ai.mode==="off"?"off":ai.mode);
   if(ai.mode!=="off")aiEnsureBrain();
   if(ai.mode==="off"&&hp<=0){state="dead";document.getElementById("dead").style.display="flex";}
@@ -630,8 +705,9 @@ function buildSelect(){
   });
 }
 function startGame(i){
-  cls=CLASSES[i];hp=cls.hp;gold=0;depth=0;fx=1;fy=0;state="play";
-  atkB=0;defB=0;potions=1;cd=0;
+  cls=CLASSES[i];gold=0;depth=0;fx=1;fy=0;state="play";
+  level=1;xp=0;weapon={name:"Fists",atk:0};armor={name:"Cloth",def:0};
+  inv={potion:1,scroll:0};lightTimer=0;cd=0;hp=maxHp();
   arrows=cls.name==="Ranger"?12:0;
   mana=cls.name==="Mage"?12:0;
   msgs=[];floaters=[];shots=[];
@@ -640,6 +716,7 @@ function startGame(i){
   document.getElementById("pad").style.display="flex";
   document.getElementById("hud").style.display="flex";
   document.getElementById("log").style.display="";
+  document.getElementById("invrow").style.display="flex";
   document.getElementById("airow").style.display="flex";
   document.getElementById("monrow").style.display="flex";
   document.getElementById("dead").style.display="none";
@@ -652,6 +729,7 @@ document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.rando
   document.getElementById("pad").style.display="none";
   document.getElementById("hud").style.display="none";
   document.getElementById("log").style.display="none";
+  document.getElementById("invrow").style.display="none";
   document.getElementById("airow").style.display="none";
   document.getElementById("monrow").style.display="none";};
 document.querySelectorAll("#pad [data-mv]").forEach(b=>{
@@ -670,6 +748,7 @@ document.addEventListener("keydown",e=>{
   else if(k===" "){e.preventDefault();endTurn();}
   else if(k==="f"){e.preventDefault();ability();}
   else if(k==="q"){e.preventDefault();drinkPotion();}
+  else if(k==="e"){e.preventDefault();readScroll();}
   else if(k==="m"){showMap=!showMap;}
 });
 function draw(t){
@@ -768,7 +847,7 @@ function draw(t){
   vx+=(px-vx)*0.4;vy+=(py-vy)*0.4;
   const PX=vx*ts+ts/2,PY=vy*ts+ts/2;
   ctx.fillStyle="rgba(240,180,80,"+(0.06*flick).toFixed(3)+")";
-  ctx.beginPath();ctx.arc(PX,PY,cls.light*ts,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(PX,PY,lightR()*ts,0,7);ctx.fill();
   ctx.fillStyle=cls.color;ctx.beginPath();ctx.arc(PX,PY,ts*0.32,0,7);ctx.fill();
   ctx.fillStyle="#f5e6d0";ctx.beginPath();ctx.arc(PX+fx*ts*0.16,PY+fy*ts*0.16,ts*0.1,0,7);ctx.fill();
   if(cls.name==="Warrior"){
@@ -804,6 +883,51 @@ function draw(t){
     ctx.fillStyle=cls.color;ctx.fillRect(MX+px*3-1,MY+py*3-1,5,5);
   }
 }
+const ncv=document.getElementById("netcv"),ntx=ncv.getContext("2d");
+const NLBL=["up","down","left","right"];
+function drawNet(){
+  if(!brainView||state!=="play")return;
+  if(!ai.brain){aiEnsureBrain();}
+  if(!lastActs||ai.mode==="off")lastActs=nfForwardAll(ai.brain,sensor());
+  const w=290,h=180;
+  if(ncv.width!==Math.round(w*DPR)){ncv.width=Math.round(w*DPR);ncv.height=Math.round(h*DPR);}
+  ntx.setTransform(DPR,0,0,DPR,0,0);ntx.clearRect(0,0,w,h);
+  const inn=[],hid=[],out=[];
+  for(let i=0;i<19;i++)inn.push([18,10+i*(h-20)/18]);
+  for(let i=0;i<24;i++)hid.push([w/2,8+i*(h-16)/23]);
+  for(let i=0;i<4;i++)out.push([w-56,h/2+(i-1.5)*(h/4.6)]);
+  const P=[inn,hid,out];
+  for(let li=0;li<2;li++){
+    const W2=ai.brain[li].w,srcA=lastActs[li],A=P[li],B=P[li+1];
+    for(let i=0;i<W2.length;i++)for(let j=0;j<W2[i].length;j++){
+      const c=W2[i][j]*srcA[j],al=Math.min(0.75,Math.abs(c)*0.55);
+      if(al<0.05)continue;
+      ntx.strokeStyle=c>0?"#1D9E75":"#D85A30";ntx.globalAlpha=al;ntx.lineWidth=Math.min(2,0.35+Math.abs(c)*0.6);
+      ntx.beginPath();ntx.moveTo(A[j][0],A[j][1]);ntx.lineTo(B[i][0],B[i][1]);ntx.stroke();
+    }
+  }
+  ntx.globalAlpha=1;
+  function node(x,y,r,a){
+    const mag=Math.min(1,Math.abs(a));
+    ntx.fillStyle=a>=0?"rgba(29,158,117,"+(0.15+0.85*mag).toFixed(2)+")":"rgba(216,90,48,"+(0.15+0.85*mag).toFixed(2)+")";
+    ntx.beginPath();ntx.arc(x,y,r,0,7);ntx.fill();
+    ntx.strokeStyle="rgba(160,160,175,0.6)";ntx.lineWidth=0.7;ntx.beginPath();ntx.arc(x,y,r,0,7);ntx.stroke();
+  }
+  for(let i=0;i<19;i++)node(inn[i][0],inn[i][1],3.4,lastActs[0][i]);
+  for(let i=0;i<24;i++)node(hid[i][0],hid[i][1],3,lastActs[1][i]);
+  const omax=Math.max.apply(null,lastActs[2].map(Math.abs))||1;
+  ntx.font="11px sans-serif";ntx.textBaseline="middle";ntx.textAlign="left";
+  for(let i=0;i<4;i++){
+    node(out[i][0],out[i][1],6.5,lastActs[2][i]/omax);
+    if(i===lastChosen){
+      ntx.strokeStyle="#EF9F27";ntx.lineWidth=1.8;
+      if(lastExplore)ntx.setLineDash([3,3]);
+      ntx.beginPath();ntx.arc(out[i][0],out[i][1],9.5,0,7);ntx.stroke();ntx.setLineDash([]);
+    }
+    ntx.fillStyle="#c9c5d4";
+    ntx.fillText(NLBL[i],out[i][0]+13,out[i][1]);
+  }
+}
 let lastT=performance.now(),acc=0;
 function frame(t){
   const dt=Math.min(0.1,(t-lastT)/1000);lastT=t;
@@ -811,7 +935,7 @@ function frame(t){
     acc+=dt*ai.sps;let guard=0;
     while(acc>=1&&guard<60){aiTick();acc-=1;guard++;}
   }
-  draw(t);
+  draw(t);drawNet();
   requestAnimationFrame(frame);
 }
 applyTheme();
@@ -821,7 +945,7 @@ setInterval(()=>{
   const stalled=performance.now()-lastT>400;
   if(stalled){
     if(state==="play"&&ai.mode!=="off"){for(let i=0;i<Math.max(1,Math.round(ai.sps/4));i++)aiTick();}
-    draw(performance.now());
+    draw(performance.now());drawNet();
   }
 },250);
 </script>
