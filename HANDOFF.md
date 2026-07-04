@@ -172,13 +172,54 @@ neuroforge.qlearn.QAgent (or evolve), export brains via N2 format,
 load in web client. Training curriculum (from DESIGN): 1) find
 stairs, 2) loot+stairs, 3) survive fights, 4) deep descent.
 
+### N3 FINDINGS (2026-07-04 overnight) - the depth plateau is architectural
+Trained Warrior/Ranger/Mage 3000 eps each (Warrior 600k steps). Results:
+100% survival, but greedy depth PLATEAUS at ~1-2 and best eval score
+caps ~0.6-0.7 regardless of training length. Action-histogram probe of
+the greedy policies is the key finding: they COLLAPSE to degenerate
+fixed-action loops (Warrior oscillates up/down 100/100; Ranger walks
+straight down into a wall 198/200; Mage walks left 199/200). They
+"survive" by trivially avoiding monsters, not by navigating. The value
+function is flat across actions because nothing in the senses
+distinguishes a good move until the stairs are already visible.
+
+Levers TESTED and REJECTED (do not re-run blind):
+- Long training (600k steps): no gain past ~ep 200. Plateau, not slow.
+- Potential-based stairs shaping (policy-invariant): helps a little.
+- Exploration bonus: helps find-tiles but if > +8 descend reward the
+  agent explores forever (bug hit+fixed); small bootstrap is fine.
+- Frontier-exploration senses (nearest-unexplored compass + explored
+  fraction, 31-dim, off-by-default flag in arena): NO gain (0.55 vs
+  0.60). A jittery nearest-frontier compass is not MEMORY.
+
+Diagnosis: a memoryless feed-forward Q-net cannot systematically
+explore a 40x26 partially-observed map; it revisits/loops with no
+trajectory memory. This is a MISSING-INFORMATION / architecture limit,
+not a tuning one.
+
+Recommended real fixes (JUSTIN'S CALL - do not do unilaterally, these
+are design decisions and some are big):
+  1. CURRICULUM (cheapest, untried): train on small dungeons where the
+     stairs are always near+reachable so the agent learns "chase the
+     stairs compass -> +8", then scale map size up. Needs the arena map
+     size parameterized (TW/TH are module constants today).
+  2. Engineered spatial memory: feed a downsampled visited-tiles / known-
+     map grid as input (needs the net to handle a bigger structured
+     input; still feed-forward).
+  3. Recurrence: give NeuroForge an RNN/GRU cell so the agent remembers
+     its trajectory. Biggest lift, most general, a real NeuroForge phase.
+Baseline brains (survive + shallow descend, beats random) are in
+py/trained/*.json and ARE usable/importable now - just don't expect deep
+diving yet.
+
 ### N4. Doors + keys; monster AI states (sleep/wander/hunt);
 sound toggle. Gameplay filler - good low-risk tasks.
 
 Priority rationale: N1 is Justin's most-repeated wish and pure JS.
 N2 is tiny and unlocks N3. N3 is the real research payoff (browser
 training is capped at ~40 steps/s UI; Python runs headless at
-thousands/s). N4 anytime.
+thousands/s). N4 anytime. NOTE: making the AI dive DEEP needs one of the
+N3-findings fixes above - flag it to Justin before investing.
 
 ## 6. Links
 

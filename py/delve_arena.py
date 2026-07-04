@@ -59,13 +59,24 @@ class DelveArena:
     action_size = 7
 
     def __init__(self, cls: str = "Warrior", max_steps: int = 120,
-                 seed: int | None = None):
+                 seed: int | None = None, frontier: bool = False):
         if cls not in CLASSES:
             raise ValueError(f"unknown class {cls}")
         self.cls_name = cls
         self.cls = CLASSES[cls]
         self.max_steps = max_steps
         self._rng = random.Random(seed)
+        # frontier=True appends 4 exploration senses (indices 27-30):
+        # a compass toward the nearest UNexplored tile + explored fraction.
+        # TESTED 2026-07-04 and it did NOT break the depth plateau (score
+        # 0.55 vs 0.60 baseline). The nearest-frontier compass jitters and
+        # points just outside current vision - it is not MEMORY, which is
+        # what systematic exploration actually needs. Kept off-by-default
+        # and documented so nobody re-runs this exact experiment. The real
+        # fix is architectural (recurrence, or a spatial visit-count input);
+        # see HANDOFF.md "N3 findings".
+        self.frontier = frontier
+        self.observation_size = 31 if frontier else 27
 
     # -- helpers mirroring the JS -----------------------------------------
 
@@ -268,7 +279,32 @@ class DelveArena:
                   res, 1.0 if self.light_timer > 0 else 0.0,
                   self.weapon[1] / 4, self.armor[1] / 3,
                   min(1.0, adj / 3), 1.0 if self.poison_timer > 0 else 0.0))
+        if self.frontier:
+            v.extend(self._frontier_senses())
         return v
+
+    def _frontier_senses(self):
+        """4 senses: compass (sgn dx, sgn dy, 1/(1+dist)) toward the nearest
+        UNexplored tile, plus the fraction of the map explored. Gives the
+        agent a directional pull into the dark so it stops wandering blind."""
+        best_d, bx, by = 10 ** 9, self.px, self.py
+        explored = self.explored
+        px, py = self.px, self.py
+        seen = 0
+        for i, e in enumerate(explored):
+            if e:
+                seen += 1
+                continue
+            x = i % TW
+            y = i // TW
+            d = abs(x - px) + abs(y - py)
+            if d < best_d:
+                best_d = d
+                bx, by = x, y
+        if best_d >= 10 ** 9:  # whole map explored (rare)
+            return [0.0, 0.0, 0.0, 1.0]
+        return [_sign(bx - px), _sign(by - py),
+                1.0 / (1 + best_d), seen / (TW * TH)]
 
     # -- combat / loot -----------------------------------------------------
 

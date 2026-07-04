@@ -84,15 +84,34 @@ EXPLORE_BONUS = 0.03  # small bootstrap only: enough to nudge the agent off
                       # (Set too high -> agent explores forever, never dives.)
 
 
+def greedy_eval_env(net, cls, seeds, frontier, max_steps=200):
+    descents, depths, survived = 0, [], 0
+    for s in seeds:
+        env = DelveArena(cls=cls, max_steps=max_steps, seed=s, frontier=frontier)
+        obs = env.reset()
+        for _ in range(max_steps):
+            obs, r, done = env.step(argmax(net.activate(obs)))
+            if done:
+                break
+        descents += env.depth
+        depths.append(env.depth)
+        if env.hp > 0:
+            survived += 1
+    n = len(seeds)
+    return dict(avg_depth=sum(depths) / n, total_descents=descents,
+                survival=survived / n, max_depth=max(depths))
+
+
 def train(cls="Warrior", episodes=1200, max_steps=200, report_every=100,
-          eval_seeds=None, verbose=True, out_path=None):
+          eval_seeds=None, verbose=True, out_path=None, frontier=False):
     random.seed(12)
     if eval_seeds is None:
         eval_seeds = list(range(90000, 90020))  # 20 fresh dungeons, never trained
 
-    net = Network(27, [32, 16], 7, task="regression")
+    obs_size = 31 if frontier else 27
+    net = Network(obs_size, [32, 16], 7, task="regression")
     target = net.copy()
-    env = DelveArena(cls=cls, max_steps=max_steps)
+    env = DelveArena(cls=cls, max_steps=max_steps, frontier=frontier)
     buffer = []
     eps = 1.0
     steps = 0
@@ -142,7 +161,7 @@ def train(cls="Warrior", episodes=1200, max_steps=200, report_every=100,
         rewards.append(total)
 
         if ep % report_every == 0 or ep == 1:
-            ev = greedy_eval(net, cls, eval_seeds)
+            ev = greedy_eval_env(net, cls, eval_seeds, frontier)
             avg_r = sum(rewards[-report_every:]) / len(rewards[-report_every:])
             score = ev["avg_depth"] + 0.5 * ev["survival"]
             tag = ""
