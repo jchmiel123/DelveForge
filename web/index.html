@@ -39,6 +39,7 @@ DF_ROOT.innerHTML=`
   <span id="h-stats" style="font-size:13px;color:var(--df-muted);"></span>
   <span id="h-gold" style="color:var(--df-accent);"></span>
   <span id="h-depth"></span>
+  <span id="h-rival" style="color:var(--df-muted);font-size:13px;"></span>
   <span style="margin-left:auto;font-size:12px;color:var(--df-muted);" id="h-seed"></span>
 </div>
 <div id="select" style="display:flex;gap:12px;align-items:stretch;"></div>
@@ -81,6 +82,7 @@ DF_ROOT.innerHTML=`
   <button id="btn-load-brain">Load</button>
   <button id="btn-del-brain">Delete</button>
   <button id="btn-fresh-brain">Fresh</button>
+  <button id="btn-rival">Add rival</button>
 </div>
 <div id="monrow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 0;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel);">
   <button id="btn-mon-ai" style="font-weight:500;">Monsters: learning</button>
@@ -104,6 +106,7 @@ let arrows=0,mana=0,cd=0;
 let level=1,xp=0,weapon={name:"Fists",atk:0},armor={name:"Cloth",def:0},inv={potion:0,scroll:0},lightTimer=0,poisonTimer=0;
 const WEAPONS=[["Dagger",1],["Sword",2],["War axe",3],["Runeblade",4]];
 const ARMORS=[["Leather",1],["Chain",2],["Plate",3]];
+let rival=null;
 let floaters=[],msgs=[],evt=null;
 function idx(x,y){return y*TW+x;}
 function inB(x,y){return x>=0&&x<TW&&y>=0&&y<TH;}
@@ -153,6 +156,7 @@ function genLevel(){
   for(const t of torches)for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
     if(Math.hypot(x-t[0],y-t[1])<=3&&los(t[0],t[1],x,y))litSet.add(idx(x,y));
   }
+  placeRival();
   computeVis();
 }
 function los(x0,y0,x1,y1){
@@ -195,17 +199,21 @@ function gainXp(n){
     floatTxt(px,py,"LVL "+level,"#EF9F27");
   }
 }
-function hitMonster(m,dmg,label){
+function hitMonster(m,dmg,label,byRival){
   m.hp-=dmg;m.flash=1;
   floatTxt(m.x,m.y,"-"+dmg,"#F09595");
   if(m.hp<=0){
     monDeathLesson(m);
     monsters.splice(monsters.indexOf(m),1);
-    const g=m.skel?3:1;gold+=g;
-    gainXp(m.skel?5:m.spider?3:2);
-    if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+mname(m)+" dropped a potion.");}
-    if(evt)evt.kill++;
-    pushMsg(label+" slays the "+mname(m)+" (+"+g+" gold, +"+(m.skel?5:2)+" xp).");
+    const g=m.skel?3:1;
+    if(byRival){if(rival)rival.gold+=g;}
+    else{
+      gold+=g;
+      gainXp(m.skel?5:m.spider?3:2);
+      if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+mname(m)+" dropped a potion.");}
+      if(evt)evt.kill++;
+    }
+    pushMsg(label+" slays the "+mname(m)+(byRival?".":" (+"+g+" gold, +"+(m.skel?5:2)+" xp)."));
   }else pushMsg(label+" hits the "+mname(m)+" for "+dmg+".");
 }
 function lootChest(x,y){
@@ -344,8 +352,9 @@ function monSensor(m){
     for(let s=1;s<=6;s++){const x=m.x+d[0]*s,y=m.y+d[1]*s;if(!inB(x,y)||grid[idx(x,y)]===WALL){wall=1/s;break;}}
     v.push(wall);
   }
-  const dx=px-m.x,dy=py-m.y,dist=Math.abs(dx)+Math.abs(dy);
-  const sees=dist<=9&&los(m.x,m.y,px,py)?1:0;
+  const t=nearestDelverTo(m);
+  const dx=t.x-m.x,dy=t.y-m.y,dist=Math.abs(dx)+Math.abs(dy);
+  const sees=dist<=9&&los(m.x,m.y,t.x,t.y)?1:0;
   v.push(Math.sign(dx),Math.sign(dy),1/(1+dist),sees);
   let allies=0;
   for(const o of monsters)if(o!==m&&Math.abs(o.x-m.x)<=1&&Math.abs(o.y-m.y)<=1)allies++;
@@ -359,7 +368,15 @@ function monDeathLesson(m){
   S.deaths++;S.eps=Math.max(0.08,S.eps*0.97);
   if(S.deaths%10===0)pushMsg("The "+sp+"s are learning from their dead...");
 }
-function attackPlayer(m){
+function attackDelver(m,who){
+  if(who==="rival"){
+    const dmg=Math.max(1,m.atk-1+(R()<0.3?1:0));
+    rival.hp-=dmg;
+    floatTxt(rival.x,rival.y,"-"+dmg,"#E24B4A");
+    pushMsg("The "+mname(m)+" hits your rival for "+dmg+".");
+    if(rival.hp<=0){rival.dead=true;pushMsg("Your rival has fallen! Their gold is lost to the dark.");}
+    return dmg;
+  }
   const dmg=Math.max(1,m.atk-defTotal()+(R()<0.3?1:0));
   hp-=dmg;if(evt)evt.dmg+=dmg;
   floatTxt(px,py,"-"+dmg,"#E24B4A");
@@ -367,33 +384,48 @@ function attackPlayer(m){
   if(m.spider&&R()<0.5&&poisonTimer<=0){poisonTimer=3;floatTxt(px,py,"poison!","#97C459");pushMsg("Venom burns in your veins (3 turns).");}
   return dmg;
 }
+function nearestDelverTo(m){
+  const dp=Math.abs(px-m.x)+Math.abs(py-m.y);
+  if(rival&&!rival.dead){
+    const dr=Math.abs(rival.x-m.x)+Math.abs(rival.y-m.y);
+    if(dr<dp)return {x:rival.x,y:rival.y,who:"rival"};
+  }
+  return {x:px,y:py,who:"player"};
+}
 function monScriptAct(m){
-  const d=Math.max(Math.abs(m.x-px),Math.abs(m.y-py));
-  if(d<=1){attackPlayer(m);return;}
+  const t=nearestDelverTo(m);
+  const d=Math.max(Math.abs(m.x-t.x),Math.abs(m.y-t.y));
+  if(d<=1){attackDelver(m,t.who);return;}
   let sx=0,sy=0;
-  if(Math.hypot(m.x-px,m.y-py)<8&&los(m.x,m.y,px,py)){
-    sx=Math.sign(px-m.x);sy=Math.sign(py-m.y);
-    if(Math.abs(m.x-px)<Math.abs(m.y-py))sx=0;else sy=0;
+  if(Math.hypot(m.x-t.x,m.y-t.y)<8&&los(m.x,m.y,t.x,t.y)){
+    sx=Math.sign(t.x-m.x);sy=Math.sign(t.y-m.y);
+    if(Math.abs(m.x-t.x)<Math.abs(m.y-t.y))sx=0;else sy=0;
   }else if(R()<0.4){const dirs=[[0,-1],[0,1],[-1,0],[1,0]];const dd=dirs[ri(4)];sx=dd[0];sy=dd[1];}
   const nx=m.x+sx,ny=m.y+sy;
-  if((sx||sy)&&walkable(nx,ny)&&!monsterAt(nx,ny)&&!(nx===px&&ny===py)){m.x=nx;m.y=ny;}
+  if((sx||sy)&&walkable(nx,ny)&&!monsterAt(nx,ny)&&!(nx===px&&ny===py)&&!(rival&&!rival.dead&&nx===rival.x&&ny===rival.y)){m.x=nx;m.y=ny;}
 }
 function monBrainAct(m){
   const S=specGet(spec(m));
   const s0=monSensor(m);
   const a=Math.random()<S.eps?Math.floor(Math.random()*MACT):nfArgmax(nfForward(S.brain,s0));
-  const d0=Math.abs(px-m.x)+Math.abs(py-m.y);
+  const t0=nearestDelverTo(m);
+  const d0=Math.abs(t0.x-m.x)+Math.abs(t0.y-m.y);
   let r=-0.02,killedPlayer=false;
   if(a<4){
     const dd=[[0,-1],[0,1],[-1,0],[1,0]][a];
     const nx=m.x+dd[0],ny=m.y+dd[1];
     if(nx===px&&ny===py){
-      const dealt=attackPlayer(m);
+      const dealt=attackDelver(m,"player");
       r+=0.8*dealt;
       if(hp<=0){r+=6;killedPlayer=true;S.kills++;}
+    }else if(rival&&!rival.dead&&nx===rival.x&&ny===rival.y){
+      const dealt=attackDelver(m,"rival");
+      r+=0.8*dealt;
+      if(rival.dead)r+=4;
     }else if(walkable(nx,ny)&&!monsterAt(nx,ny)){m.x=nx;m.y=ny;}
   }
-  r+=0.15*(d0-(Math.abs(px-m.x)+Math.abs(py-m.y)));
+  const t1=nearestDelverTo(m);
+  r+=0.15*(d0-(Math.abs(t1.x-m.x)+Math.abs(t1.y-m.y)));
   m.lastS=s0;m.lastA=a;
   S.buffer.push([s0,a,r,monSensor(m),killedPlayer]);
   if(S.buffer.length>3000)S.buffer.shift();
@@ -429,7 +461,90 @@ function monInfo(){
   }
   el.textContent=parts.join(" - ")||"waiting for the first encounter";
 }
+function rivalVis(){
+  const set=new Set();
+  if(!rival||rival.dead)return set;
+  for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
+    const dx=x-rival.x,dy=y-rival.y,d=Math.hypot(dx,dy);
+    const f=dx*rival.fx+dy*rival.fy,l=dx*(-rival.fy)+dy*rival.fx;
+    const inCone=f>=0&&f<=rival.cone&&Math.abs(l)<=1+f*0.7;
+    const nearRing=Math.abs(dx)<=1&&Math.abs(dy)<=1;
+    if(!inCone&&!nearRing)continue;
+    if(!los(rival.x,rival.y,x,y))continue;
+    if(d<=rival.light||litSet.has(idx(x,y))){set.add(idx(x,y));rival.explored[idx(x,y)]=1;}
+  }
+  set.add(idx(rival.x,rival.y));rival.explored[idx(rival.x,rival.y)]=1;
+  return set;
+}
+function rivalSensor(vis){
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]],v=[];
+  for(const d of dirs){
+    let wall=0,mon=0,chest=0;
+    for(let s=1;s<=10;s++){
+      const x=rival.x+d[0]*s,y=rival.y+d[1]*s;
+      if(!inB(x,y)||grid[idx(x,y)]===WALL){wall=1/s;break;}
+      const id=idx(x,y);
+      if(vis.has(id)){
+        if(!mon&&monsterAt(x,y))mon=1/s;
+        if(!chest&&grid[id]===CHEST)chest=1/s;
+      }
+    }
+    v.push(wall,mon,chest);
+  }
+  let sx=0,sy=0,sd=0,seen=0;
+  const si=grid.indexOf(STAIRS);
+  if(si>=0&&rival.explored[si]){
+    const tx=si%TW,ty=Math.floor(si/TW);
+    seen=1;sx=Math.sign(tx-rival.x);sy=Math.sign(ty-rival.y);
+    sd=1/(1+Math.abs(tx-rival.x)+Math.abs(ty-rival.y));
+  }
+  v.push(sx,sy,sd,seen,rival.hp/rival.maxhp,Math.min(1,depth/6),1);
+  let adj=0;
+  for(const m of monsters)if(Math.abs(m.x-rival.x)<=1&&Math.abs(m.y-rival.y)<=1)adj++;
+  v.push(0,0,0,0,0,0,Math.min(1,adj/3),0);
+  return v;
+}
+function placeRival(){
+  if(!rival)return;
+  const r=rooms[Math.max(1,rooms.length-2)];
+  rival.x=r.x+(r.w>>1);rival.y=r.y+(r.h>>1);
+  if(rival.x===px&&rival.y===py)rival.x=Math.max(1,rival.x-1);
+  rival.vx=rival.x;rival.vy=rival.y;
+  rival.fx=1;rival.fy=0;
+  rival.hp=rival.maxhp;rival.dead=false;
+  rival.explored=new Uint8Array(TW*TH);
+}
+function rivalTick(){
+  if(!rival||rival.dead)return;
+  const vis=rivalVis();
+  const s=rivalSensor(vis).slice(0,brainIn(rival.brain));
+  const q=nfForward(rival.brain,s);
+  let a=0;for(let i=1;i<Math.min(4,q.length);i++)if(q[i]>q[a])a=i;
+  const dd=[[0,-1],[0,1],[-1,0],[1,0]][a];
+  rival.fx=dd[0];rival.fy=dd[1];
+  const nx=rival.x+dd[0],ny=rival.y+dd[1];
+  if(!inB(nx,ny))return;
+  const m=monsterAt(nx,ny);
+  const t=grid[idx(nx,ny)];
+  if(m){hitMonster(m,rival.atk+(R()<0.3?1:0),rival.name,true);}
+  else if(t===CHEST){
+    grid[idx(nx,ny)]=CHESTO;
+    const g=5+ri(6)+depth*3;rival.gold+=g;
+    floatTxt(nx,ny,"rival +"+g,"#B5D4F4");
+    pushMsg(rival.name+" plunders a chest (+"+g+" gold).");
+  }
+  else if(walkable(nx,ny)&&!(nx===px&&ny===py)){
+    rival.x=nx;rival.y=ny;
+    if(t===STAIRS){
+      pushMsg(rival.name+" reaches the stairs first and drags you down!");
+      depth++;hp=Math.min(maxHp(),hp+3);
+      if(evt)evt.descend=true;
+      genLevel();updateHud();
+    }
+  }
+}
 function monstersTurn(){
+  rivalTick();
   for(const m of monsters.slice()){
     if(hp<=0)break;
     if(monAI.on)monBrainAct(m);else monScriptAct(m);
@@ -469,6 +584,7 @@ function updateHud(){
   document.getElementById("h-gold").textContent=gold+" gold";
   document.getElementById("h-depth").textContent=(LEVELS[Math.min(depth,LEVELS.length-1)])+" ("+(depth+1)+")";
   document.getElementById("h-seed").textContent="seed "+baseSeed;
+  document.getElementById("h-rival").textContent=rival?(rival.dead?"rival: fallen":"rival: "+rival.gold+" gold"):"";
 }
 const NFCLIP=5;
 function nfClip(g){return g>NFCLIP?NFCLIP:(g<-NFCLIP?-NFCLIP:g);}
@@ -712,6 +828,25 @@ document.getElementById("btn-theme").onclick=()=>{
   try{localStorage.setItem("df_theme",themeName);}catch(e){}
   applyTheme();
 };
+document.getElementById("btn-rival").onclick=()=>{
+  if(rival){
+    rival=null;
+    document.getElementById("btn-rival").textContent="Add rival";
+    pushMsg("Your rival departs.");updateHud();return;
+  }
+  const k=document.getElementById("brain-list").value;
+  if(!k){pushMsg("Pick a saved brain from the list to be your rival.");return;}
+  const rec=brainStore()[k];
+  if(!rec){pushMsg("That brain is gone.");return;}
+  const rcls=CLASSES.find(c=>c.name===rec.cls)||CLASSES[1];
+  rival={x:0,y:0,vx:0,vy:0,fx:1,fy:0,hp:rcls.hp,maxhp:rcls.hp,atk:rcls.atk+1,
+    cone:rcls.cone,light:rcls.light,color:rcls.color,gold:0,dead:false,
+    brain:rec.brain,name:"Rival "+rec.cls.toLowerCase(),explored:new Uint8Array(TW*TH)};
+  placeRival();
+  document.getElementById("btn-rival").textContent="Dismiss rival";
+  pushMsg(rival.name+' ("'+k+'") enters the dungeon. Race for the stairs!');
+  updateHud();
+};
 document.getElementById("btn-fresh-brain").onclick=()=>{
   ai.brain=null;aiEnsureBrain();ai.episodes=0;ai.bestDepth=0;ai.buffer=[];
   pushMsg("A fresh Mk II rookie takes over (deeper brain, item actions).");aiInfo();
@@ -919,6 +1054,13 @@ function draw(t){
     ctx.globalAlpha=1;
   }
   shots=shots.filter(s=>s.age<=1);
+  if(rival&&!rival.dead&&visCache.has(idx(rival.x,rival.y))){
+    rival.vx+=(rival.x-rival.vx)*0.4;rival.vy+=(rival.y-rival.vy)*0.4;
+    const RX=rival.vx*ts+ts/2,RY=rival.vy*ts+ts/2;
+    ctx.fillStyle=rival.color;ctx.beginPath();ctx.arc(RX,RY,ts*0.3,0,7);ctx.fill();
+    ctx.fillStyle="#f5e6d0";ctx.beginPath();ctx.arc(RX+rival.fx*ts*0.15,RY+rival.fy*ts*0.15,ts*0.09,0,7);ctx.fill();
+    ctx.strokeStyle="#ffffff";ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(RX,RY,ts*0.4,0,7);ctx.stroke();
+  }
   vx+=(px-vx)*0.4;vy+=(py-vy)*0.4;
   const PX=vx*ts+ts/2,PY=vy*ts+ts/2;
   ctx.fillStyle="rgba(240,180,80,"+(0.06*flick).toFixed(3)+")";

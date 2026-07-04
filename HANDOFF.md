@@ -133,10 +133,10 @@ Artifact URL: https://claude.ai/code/artifact/d817b246-70f7-424b-80a3-423df7e0c5
 
 ## 5. Next phases - specs ready to execute
 
-### N1. Rival delver (Justin's "second player", HIGH priority)
+### N1. Rival delver - DONE in v0.8.0 (kept for reference)
 Goal: a saved brain plays a second character in the SAME dungeon;
 race to the stairs / compete for loot.
-Design decisions already made:
+Implementation note: chose DUPLICATED perception helpers (rivalVis/rivalSensor mirror computeVis/sensor) instead of parameterizing the player path - zero regression risk to the sensor contract. Rival is greedy-only, moves-only (q sliced to 4), no items (Mk II sensor block fed zeros except adjacency), own explored memory, monsters target nearest delver via nearestDelverTo, first-to-stairs descends both. Original design notes:
 - Do NOT fully generalize to an actors array (too invasive). Add a
   `rival` object {x,y,fx,fy,hp,cls,brain,vx,vy, light,cone} and
   parameterize ONLY the perception helpers: computeVisFor(actor) and
