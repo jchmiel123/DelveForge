@@ -153,8 +153,8 @@ Implementation note: chose DUPLICATED perception helpers (rivalVis/rivalSensor m
 - UI: "Rival" button next to brain roster: pick a saved brain, spawn
   it at a far room. Rival death = it stays dead until next level.
 
-### N2. Brain export/import (enables Python training loop)
-Add Export button: JSON.stringify({format:"neuroforge-network-v1",
+### N2. Brain export/import - DONE in v0.9.0
+Implemented: Export/Import panel (toggle button in AI row) with a copyable textarea. Export serializes ai.brain (or selected roster brain) using ACTUAL dims via brainIn/brainOut (Mk I brains export too). Import accepts my envelope OR a raw NeuroForge Network.save() JSON, saves to roster + makes active. Python side: NeuroForge/delveforge_bridge.py (net_from_obj/load_brain/net_to_obj/save_brain) - verified JS export -> Python load is bit-identical (drift 0.0). Bridge DelveEnv is a stub until N3. Original spec: JSON.stringify({format:"neuroforge-network-v1",
 layers:[{weights:l.w,biases:l.b,activation:l.a}], meta:{game:
 "delveforge", sensors:27, actions:7, cls, bestDepth}}) into a copyable
 textarea (and Import reverse). Python side: NeuroForge Network.load

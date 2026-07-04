@@ -83,6 +83,17 @@ DF_ROOT.innerHTML=`
   <button id="btn-del-brain">Delete</button>
   <button id="btn-fresh-brain">Fresh</button>
   <button id="btn-rival">Add rival</button>
+  <button id="btn-io">Export / Import</button>
+</div>
+<div id="iorow" style="display:none;flex-direction:column;gap:6px;margin:6px 0 0;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel);">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <span style="font-size:12px;color:var(--df-muted);">Portable brain (NeuroForge JSON) - copy out, or paste in and Import</span>
+    <span style="margin-left:auto;"></span>
+    <button id="btn-export">Export active brain</button>
+    <button id="btn-import">Import from box</button>
+    <button id="btn-io-copy">Copy</button>
+  </div>
+  <textarea id="io-box" spellcheck="false" style="width:100%;box-sizing:border-box;height:96px;font-family:ui-monospace,monospace;font-size:11px;background:var(--df-bg);color:var(--df-text);border:1px solid var(--df-border);border-radius:8px;padding:6px;resize:vertical;" placeholder="Brain JSON appears here on Export; paste a brain here then press Import."></textarea>
 </div>
 <div id="monrow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 0;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel);">
   <button id="btn-mon-ai" style="font-weight:500;">Monsters: learning</button>
@@ -823,6 +834,62 @@ document.getElementById("btn-del-brain").onclick=()=>{
   document.getElementById("brain-list").value="";
   refreshBrainList();aiInfo();
 };
+function brainToPortable(b,meta){
+  return {
+    format:"neuroforge-network-v1",
+    task:"classification",
+    input_size:brainIn(b),
+    hidden_sizes:b.slice(0,-1).map(l=>l.b.length),
+    output_size:brainOut(b),
+    activation:b[0]?b[0].a:"tanh",
+    layers:b.map(l=>({input_size:l.w[0].length,output_size:l.b.length,weights:l.w,biases:l.b,activation:l.a})),
+    meta:Object.assign({game:"delveforge",sensors:brainIn(b),actions:brainOut(b)},meta||{})
+  };
+}
+function portableToBrain(obj){
+  if(!obj||!obj.layers||!obj.layers.length)throw new Error("no layers");
+  return obj.layers.map(l=>{
+    const w=l.weights||l.w,bi=l.biases||l.b,a=l.activation||l.a||"tanh";
+    if(!w||!bi)throw new Error("layer missing weights/biases");
+    return {w:w,b:bi,a:a};
+  });
+}
+document.getElementById("btn-io").onclick=()=>{
+  const row=document.getElementById("iorow");
+  const show=row.style.display==="none";
+  row.style.display=show?"flex":"none";
+  document.getElementById("btn-io").textContent=show?"Hide export / import":"Export / Import";
+};
+document.getElementById("btn-export").onclick=()=>{
+  let b=ai.brain,meta={cls:cls?cls.name:"",bestDepth:ai.bestDepth,episodes:ai.episodes};
+  const k=document.getElementById("brain-list").value;
+  if(!b&&k){const rec=brainStore()[k];if(rec){b=rec.brain;meta={cls:rec.cls,bestDepth:rec.bestDepth,episodes:rec.episodes};}}
+  if(!b){pushMsg("No brain to export - turn the AI on or pick a saved brain first.");return;}
+  document.getElementById("io-box").value=JSON.stringify(brainToPortable(b,meta));
+  pushMsg("Brain exported to the box. Copy it out to a file or Python.");
+};
+document.getElementById("btn-io-copy").onclick=()=>{
+  const box=document.getElementById("io-box");
+  box.select();
+  let ok=false;try{ok=document.execCommand("copy");}catch(e){}
+  if(!ok&&navigator.clipboard){navigator.clipboard.writeText(box.value).then(()=>pushMsg("Copied to clipboard."));return;}
+  pushMsg(ok?"Copied to clipboard.":"Select the text and copy manually.");
+};
+document.getElementById("btn-import").onclick=()=>{
+  const txt=document.getElementById("io-box").value.trim();
+  if(!txt){pushMsg("Paste a brain JSON into the box first.");return;}
+  let brain,meta;
+  try{const obj=JSON.parse(txt);brain=portableToBrain(obj);meta=obj.meta||{};}
+  catch(e){pushMsg("Import failed: "+e.message);return;}
+  const nIn=brain[0].w[0].length,nOut=brain[brain.length-1].b.length;
+  const store=brainStore();
+  const nm=(meta.cls?meta.cls:"imported")+" (imported) #"+(Object.keys(store).length+1);
+  store[nm]={brain:brain,eps:0.05,episodes:meta.episodes||0,bestDepth:meta.bestDepth||0,cls:meta.cls||"Ranger"};
+  try{localStorage.setItem("df_brains",JSON.stringify(store));}catch(e){}
+  ai.brain=brain;ai.target=nfCopy(brain);ai.eps=0.05;ai.name=nm;ai.buffer=[];
+  refreshBrainList();aiInfo();
+  pushMsg("Imported brain ("+nIn+" senses, "+nOut+" actions), saved as \""+nm+"\" and made active.");
+};
 document.getElementById("btn-theme").onclick=()=>{
   themeName=themeName==="dark"?"light":"dark";
   try{localStorage.setItem("df_theme",themeName);}catch(e){}
@@ -918,6 +985,7 @@ function startGame(i){
   document.getElementById("invrow").style.display="flex";
   document.getElementById("airow").style.display="flex";
   document.getElementById("monrow").style.display="flex";
+  document.getElementById("iorow").style.display="none";
   document.getElementById("dead").style.display="none";
   pushMsg("You enter the abandoned manor. Find the stairs down.");
   genLevel();updateHud();cv.focus();refreshBrainList();monInfo();
@@ -930,7 +998,9 @@ document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.rando
   document.getElementById("log").style.display="none";
   document.getElementById("invrow").style.display="none";
   document.getElementById("airow").style.display="none";
-  document.getElementById("monrow").style.display="none";};
+  document.getElementById("monrow").style.display="none";
+  document.getElementById("iorow").style.display="none";
+  document.getElementById("btn-io").textContent="Export / Import";};
 document.querySelectorAll("#pad [data-mv]").forEach(b=>{
   const mv=b.getAttribute("data-mv").split(",");
   b.onclick=()=>{if(ai.mode==="off")playerAct(parseInt(mv[0],10),parseInt(mv[1],10));};
