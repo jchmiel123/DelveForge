@@ -162,8 +162,8 @@ already reads this shape if given input_size/hidden/output metadata -
 write a tiny converter in NeuroForge (delveforge_bridge.py) rather
 than changing the format.
 
-### N3. Python arena port (DESIGN.md P3)
-Decision: behavioral equivalence, NOT seed parity (JS/py RNG call
+### N3. Python arena port - IN PROGRESS (v0.9, infra done)
+DONE: py/delve_arena.py (DelveArena, NeuroForge Environment, scripted monsters for stationarity, ~3800 steps/s raw / ~180 with training = ~100x/5x browser), py/train.py (double-DQN loop mirroring the JS constants + potential-based stairs shaping + small exploration bootstrap + greedy-eval-on-fresh-seeds + best-checkpoint-to-disk, exports via bridge). Verified: arena 27-dim sensor, episodes terminate, trains (survival 100%, greedy depth climbing, reaches depth 3). KNOWN CEILING: reliable deep descent is hard for a reactive DQN on a cone-limited 40x26 map - it explores+survives well but descends slowly; needs long training and/or curriculum for depth. Reward-shaping lesson relearned: exploration bonus must stay BELOW the +8 descend reward or the agent explores forever (bug hit + fixed). Original decision: behavioral equivalence, NOT seed parity (JS/py RNG call
 order will drift; do not chase it). Port order: grid/procgen ->
 perception -> combat/loot -> turn loop -> Environment adapter
 (reset/step matching neuroforge.evolve.Environment). Mirror the
