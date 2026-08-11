@@ -101,10 +101,13 @@ re-rolls baseSeed; AI respawn KEEPS it (reproducible curriculum).
    everything between the body tags (a python transform, ~10 lines),
    then call the Artifact tool with the SAME file path to update the
    SAME url.
-4. SHIP: bump VERSION (SemVer), commit with a detailed message, push
-   to origin master (github.com/jchmiel123/DelveForge, credentials via
-   git credential manager). Update project memory
-   (project_delveforge.md) with one line.
+4. SHIP: bump VERSION (SemVer), run `node tools/stamp.js` (rewrites the
+   inline version-stamp block - the `.version-tag` footer line showing
+   "v<ver> - updated <date time>"; Slotto v1.4.0 all-projects rule),
+   commit with a detailed message, push to origin master
+   (github.com/jchmiel123/DelveForge, credentials via git credential
+   manager). Update project memory (project_delveforge.md) with one
+   line.
 
 Artifact URL: https://claude.ai/code/artifact/d817b246-70f7-424b-80a3-423df7e0c500 (redeploy by regenerating the fragment and calling Artifact with the SAME scratchpad file path, or pass url= from a fresh session)
 
