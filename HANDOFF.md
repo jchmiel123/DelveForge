@@ -14,7 +14,8 @@ refers to functions in that file.
 |--------|------------------|-------|
 | Procgen | genLevel | rooms+L-corridors, torches, chests, stairs; seeded |
 | Perception | computeVis, los, lightR | facing cone + light gate + fog memory |
-| Combat/loot | hitMonster, lootChest, ability, attackPlayer | XP via gainXp; poison via tickPoison |
+| Combat/loot | hitMonster, lootChest, ability, attackDelver, strikeDmg | XP via gainXp; poison via tickPoison; crit/dodge/regen/goldFind come from gear |
+| Gear (v0.12) | GEAR_BASE, makeItem, itemStats, gainItem, equipFromBag, gearXp, renderGear | 11 slots + 12-slot pack; empty slot auto-equips, else pack + compare; uncommon/rare items level with kills; sheets: #gear (Gear/I), #admin (Menu) |
 | Player agent | aiTick, aiMove, aiUse, sensor, turnUpkeep | DQN-lite, arch-adaptive |
 | Monster brains | monBrainAct, monTrainAll, monSensor, specGet | one hive-brain per species |
 | NF runtime | nfForwardAll, nfForward, nfTrain, nfRandom, nfCopy | generic N-layer backprop |
@@ -47,8 +48,11 @@ visCache (perception honesty).
 seen flag (uses `explored`, not current vision - engineered memory).
 16: hp/maxHp. 17: min(1, depth/6). 18: bias 1.
 19-26 (Mk II block): min(1,potions/3), scroll flag, class resource
-(arrows/12 | mana/12 | smite-ready), light-blazing flag, weapon.atk/4,
-armor.def/3, min(1, adjacent monsters/3), poisoned flag.
+(arrows/12 | mana/12 | smite-ready), light-blazing flag, weapon atk/4
+(v0.12: the equipped weapon's effective atk incl. item level - gearAtk()),
+total gear def/3 (v0.12: sum over all armor slots - gearSum("def"); was the
+single body armor), min(1, adjacent monsters/3), poisoned flag. The pack
+and the other gear stats are NOT sensed; the agent never manages gear.
 
 ### Monster sensor (11): 4 wall rays (max 6) + player compass
 (sgn dx, sgn dy, 1/(1+dist), LOS<=9 flag) + own hp frac +
@@ -249,6 +253,46 @@ diving yet.
 
 ### N4. Doors + keys; monster AI states (sleep/wander/hunt);
 sound toggle. Gameplay filler - good low-risk tasks.
+
+### N5. Gear + inventory - DONE in v0.12.0 (2026-10-07, Justin's spec from the phone)
+Justin: "a full inventory screen - head, shoulders, cape, chest, bracers,
+gauntlets, a ring on each hand, legs, boots"; keep the "don't have to swap
+all the time" feel but allow swaps; items (the special ones) gain their own
+experience. Implementation:
+- Item = {uid, slot (kind; rings are slot "ring" and sit in ringL/ringR),
+  tier, name, base{stats}, rarity 0/1/2, lvl 0-5, xp, extra{stat}}.
+  Stats: atk, def, hp, light, dodge%, crit%, regen, goldFind%, poisonRes.
+  Tables in GEAR_BASE (names/tiers per slot); tier rolls with depth; rarity
+  8% rare / 27% uncommon / 65% common. Uncommon = "Fine|Sturdy|..." prefix,
+  rare = "... of the Depths" suffix + one extra stat.
+- Growth (gearXp on every PLAYER kill, all equipped items): uncommon +1 xp,
+  rare +2 xp; thresholds GEAR_LVL=[3,8,15,25,40]; itemStats applies the
+  level: atk +1 at lvl 2/4, def +1 at lvl 3, hp +1/lvl, dodge/crit +5/lvl,
+  goldFind +10/lvl, light +1 at lvl 3, regen rate up at lvl 2/4. Common
+  gear never grows (so a found Runeblade still beats a Dagger +5 = 3 atk).
+- Pickup (gainItem): empty slot (rings: L then R) auto-equips with a
+  message; otherwise into the pack with "looks better / not better than
+  your X" (itemScore heuristic); pack full -> auto-sold (sellValue).
+  Sources: chests (34% gear, slot by SLOT_WEIGHTS), skeleton 25% / spider
+  10% / rat 4% drop on kill (after the potion roll).
+- Combat hooks: atk() = cls + gearSum(atk) + level; defTotal() = cls +
+  gearSum(def); maxHp() += gearSum(hp); lightR() += gearSum(light);
+  strikeDmg() adds crit; attackDelver rolls dodge before damage and venom
+  resist on spider bites; regenTick() every max(2, 7-regen) turns
+  (turnCount increments in endTurn/turnUpkeep); goldAdj() on chest and
+  kill gold. These extra R() calls change seed-for-seed runs vs v0.11.
+- UI: #gear sheet (position:fixed, inside #df-root for theme vars): paper
+  doll (DOLL_ORDER, 3 columns), pack list, sticky detail panel with
+  Equip (rings: left/right) / Unequip / Sell. Keys: I toggles, Escape
+  closes; while a sheet is open game keys are ignored. Gear key in the
+  touch bar shows a "(n)" badge for unseen finds; desktop has "Gear (I)"
+  in the pad row. #admin wraps the AI/io/monster rows: inline on desktop,
+  hidden in touch mode, and the HUD "Menu" button opens it as a sheet
+  anywhere (Close returns to the mode default).
+- NOT ported to py/delve_arena.py: the arena still has the v0.9
+  weapon/armor tiers. Game rules diverged here on purpose (the human game
+  moved first); port the item model before the next serious training run,
+  or train with gear disabled. Trained brains still load (27-dim).
 
 Priority rationale: N1 is Justin's most-repeated wish and pure JS.
 N2 is tiny and unlocks N3. N3 is the real research payoff (browser

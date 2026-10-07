@@ -17,6 +17,11 @@ Open `web/index.html` in any browser. No build step, no dependencies.
   zoom, Map for the whole level. An optional visible d-pad is one toggle
   away. On desktop, + / - / 0 zoom in, out and back to the whole map.
 - Bump monsters to fight, bump chests to loot, find the stairs, descend.
+- Gear (I, or the Gear key on a phone): eleven equipment slots and a
+  twelve-slot pack. Empty slots fill themselves; anything else waits in the
+  pack with a "better / not better" note. Uncommon and rare finds grow
+  with your kills (+1 ... +5); common gear does not.
+- Menu (top right) opens the AI, brains, monsters and settings panel.
 - You see only what your facing cone AND your light allow. The dark is real.
 
 ## Status

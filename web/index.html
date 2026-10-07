@@ -17,7 +17,22 @@ body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0
 #df-root{touch-action:manipulation;}
 #cv{touch-action:none;}
 #tpad{display:none;position:sticky;bottom:0;z-index:5;margin:8px -10px 0;padding:8px 10px 10px;background:var(--df-bg);border-top:1px solid var(--df-border);align-items:center;justify-content:space-between;gap:10px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
-#tpad.ai-on .dpad,#tpad.ai-on .tacts .tk:not(#tk-zoomout):not(#tk-zoomin):not(#tk-full):not(#tk-map){opacity:0.45;}
+#tpad.ai-on .dpad,#tpad.ai-on .tacts .tk:not(#tk-zoomout):not(#tk-zoomin):not(#tk-gear):not(#tk-map){opacity:0.45;}
+.sheet{position:fixed;inset:0;z-index:20;background:var(--df-bg);color:var(--df-text);overflow:auto;padding:10px 12px 20px;box-sizing:border-box;-webkit-overflow-scrolling:touch;}
+.sheet-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;position:sticky;top:0;z-index:2;background:var(--df-bg);padding:4px 0;}
+#admin.sheet>div{margin-top:8px;}
+.doll{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.dslot{border:1px solid var(--df-border);border-radius:10px;padding:6px 8px;background:var(--df-panel);min-height:54px;cursor:pointer;}
+.dslot.sel,.brow.sel{border-color:var(--df-accent);box-shadow:0 0 0 1px var(--df-accent) inset;}
+.dl{font-size:11px;color:var(--df-muted);}
+.dn{font-size:13px;font-weight:500;overflow-wrap:anywhere;}
+.ds,.bs{font-size:11.5px;color:var(--df-muted);}
+.brow{display:flex;flex-direction:column;gap:2px;border:1px solid var(--df-border);border-radius:10px;padding:6px 8px;background:var(--df-panel);margin-top:6px;cursor:pointer;}
+.bn{font-size:13px;font-weight:500;}
+#gear-detail{position:sticky;bottom:0;z-index:2;margin-top:10px;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel2);font-size:13px;display:none;}
+#gear-detail .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+#gear-detail .acts button{min-height:40px;}
+#hud-btns{display:inline-flex;gap:6px;}
 .dpad{display:grid;grid-template-areas:". u ." "l c r" ". d .";grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:4px;}
 .tacts{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;flex:1;max-width:230px;}
 #tpad.nodpad .dpad{display:none;}
@@ -32,6 +47,7 @@ body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0
   #select{flex-direction:column;}
   #hud{gap:8px;font-size:13px;}
   #h-seed{display:none;}
+  #hud-btns{margin-left:auto;}
   #brainbox{transform:scale(0.66);transform-origin:top right;}
 }
 </style>
@@ -61,6 +77,7 @@ DF_ROOT.innerHTML=`
   <span id="h-depth"></span>
   <span id="h-rival" style="color:var(--df-muted);font-size:13px;"></span>
   <span style="margin-left:auto;font-size:12px;color:var(--df-muted);" id="h-seed"></span>
+  <span id="hud-btns"><button id="btn-menu">Menu</button><button id="tk-full" style="display:none;">Full</button></span>
 </div>
 <div id="select" style="display:flex;gap:12px;align-items:stretch;"></div>
 <div id="stage" style="position:relative;display:none;">
@@ -88,6 +105,7 @@ DF_ROOT.innerHTML=`
   <button id="btn-potion">Potion (Q)</button>
   <button id="btn-wait">Wait</button>
   <button id="btn-map">Map (M)</button>
+  <button id="btn-gear">Gear (I)</button>
   <span style="font-size:11.5px;color:var(--df-muted);margin-left:auto;">arrows/WASD - click the dungeon first</span>
 </div>
 <div id="tpad" class="nodpad">
@@ -102,13 +120,15 @@ DF_ROOT.innerHTML=`
     <button class="tk" id="tk-ability">Ability</button>
     <button class="tk" id="tk-potion">Potion</button>
     <button class="tk" id="tk-scroll">Scroll</button>
+    <button class="tk" id="tk-gear">Gear</button>
     <button class="tk" id="tk-map">Map</button>
     <button class="tk" id="tk-wait2" aria-label="Wait a turn">Wait</button>
     <button class="tk" id="tk-zoomout" aria-label="Zoom out">Zoom -</button>
     <button class="tk" id="tk-zoomin" aria-label="Zoom in">Zoom +</button>
-    <button class="tk" id="tk-full" style="display:none;">Full screen</button>
   </div>
 </div>
+<div id="admin">
+<div class="sheet-head" id="admin-head" style="display:none;"><b>Menu</b><button id="admin-close" style="margin-left:auto;">Close</button><div style="flex-basis:100%;font-size:12px;color:var(--df-muted);">AI modes, saved brains, rival, import / export, monsters, theme, touch settings</div></div>
 <div id="airow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel);">
   <button id="btn-ai" style="font-weight:500;">AI: off</button>
   <span id="ai-info" style="font-size:12px;color:var(--df-muted);"></span>
@@ -143,6 +163,14 @@ DF_ROOT.innerHTML=`
   <button id="btn-touch">Touch pad: auto</button>
   <button id="btn-dpad">D-pad: off</button>
 </div>
+</div>
+<div id="gear" class="sheet" style="display:none;">
+  <div class="sheet-head"><b>Gear</b><button id="gear-close" style="margin-left:auto;">Close</button><div id="gear-sum" style="flex-basis:100%;font-size:12px;color:var(--df-muted);"></div></div>
+  <div class="doll" id="doll"></div>
+  <div style="margin:12px 0 2px;font-weight:500;" id="bag-h">Pack</div>
+  <div id="bag"></div>
+  <div id="gear-detail"></div>
+</div>
 <div class="version-tag" style="margin:8px 2px 0;font-size:11px;color:var(--df-muted);"></div>`;
 const TW=40,TH=26,WALL=0,FLOOR=1,STAIRS=3,CHEST=5,CHESTO=6;
 const LEVELS=["The abandoned manor","The cellars","The catacombs","The deep halls","The old mine","The ember depths"];
@@ -156,9 +184,119 @@ function R(){return rng();}
 function ri(n){return Math.floor(R()*n);}
 let cls=null,depth=0,grid,rooms,torches,monsters,explored,litSet,px,py,fx=1,fy=0,hp,gold,vx,vy,showMap=false,state="select",visCache=new Set();
 let arrows=0,mana=0,cd=0;
-let level=1,xp=0,weapon={name:"Fists",atk:0},armor={name:"Cloth",def:0},inv={potion:0,scroll:0},lightTimer=0,poisonTimer=0;
-const WEAPONS=[["Dagger",1],["Sword",2],["War axe",3],["Runeblade",4]];
-const ARMORS=[["Leather",1],["Chain",2],["Plate",3]];
+let level=1,xp=0,inv={potion:0,scroll:0},lightTimer=0,poisonTimer=0,turnCount=0;
+/* ---- gear (v0.12): 11 equipment slots + a pack; uncommon/rare items grow with kills ---- */
+const SLOTS=["weapon","head","shoulders","cape","chest","bracers","gauntlets","ringL","ringR","legs","boots"];
+const DOLL_ORDER=["head","shoulders","cape","gauntlets","chest","bracers","ringL","legs","ringR","weapon","boots"];
+const SLOT_LABEL={weapon:"Weapon",head:"Head",shoulders:"Shoulders",cape:"Cape",chest:"Chest",bracers:"Bracers",gauntlets:"Gauntlets",ringL:"Ring (L)",ringR:"Ring (R)",legs:"Legs",boots:"Boots",ring:"Ring"};
+const GEAR_BASE={
+ weapon:[["Dagger",{atk:1}],["Sword",{atk:2}],["War axe",{atk:3}],["Runeblade",{atk:4}]],
+ chest:[["Leather armor",{def:1}],["Chain mail",{def:2}],["Plate armor",{def:3}]],
+ legs:[["Cloth trousers",{hp:1}],["Leather greaves",{def:1}],["Steel greaves",{def:1,hp:2}]],
+ head:[["Hood",{hp:1}],["Iron helm",{def:1}],["Great helm",{def:1,hp:3}]],
+ shoulders:[["Cloth mantle",{hp:1}],["Leather pauldrons",{hp:2}],["Steel pauldrons",{hp:4}]],
+ cape:[["Traveler's cloak",{light:1}],["Shadow cape",{dodge:10}],["Watcher's cape",{light:1,dodge:10}]],
+ bracers:[["Leather bracers",{poisonRes:1}],["Warbands",{atk:1}],["Runed bracers",{atk:1,poisonRes:1}]],
+ gauntlets:[["Leather grips",{crit:10}],["Iron gauntlets",{crit:15}],["Fists of ruin",{crit:20,atk:1}]],
+ boots:[["Soft boots",{dodge:5}],["Hunter's boots",{dodge:10}],["Windstep boots",{dodge:15}]],
+ ring:[["Ring of vigor",{hp:3}],["Ring of embers",{light:1}],["Ring of renewal",{regen:1}],["Ring of avarice",{goldFind:25}],["Ring of fangs",{atk:1}]]};
+const SLOT_WEIGHTS=[["weapon",18],["chest",14],["legs",9],["head",9],["shoulders",7],["cape",8],["bracers",8],["gauntlets",8],["boots",9],["ring",10]];
+const UNC_PRE=["Fine","Sturdy","Keen","Old","Trusty","Blessed"];
+const RARE_SUF=["of the Depths","of Embers","of the Rat King","of Whispers","of Dawn","of the Catacombs"];
+const STAT_FMT={atk:v=>"ATK +"+v,def:v=>"DEF +"+v,hp:v=>"HP +"+v,light:v=>"Light +"+v,dodge:v=>"Dodge "+v+"%",crit:v=>"Crit "+v+"%",regen:v=>"Regen "+v,goldFind:v=>"Gold +"+v+"%",poisonRes:v=>"Venom resist"};
+const GEAR_LVL=[3,8,15,25,40],BAG_MAX=12;
+let gearUid=0,gear=emptyGear(),bag=[],newGear=0,gearSel=null,gearOpen=false,adminOpen=false;
+function emptyGear(){const g={};for(const s of SLOTS)g[s]=null;return g;}
+function rollSlot(){let t=0;for(const w of SLOT_WEIGHTS)t+=w[1];let r=R()*t;for(const w of SLOT_WEIGHTS){r-=w[1];if(r<0)return w[0];}return "weapon";}
+function lowerFirst(s){return s.charAt(0).toLowerCase()+s.slice(1);}
+function makeItem(slot,d){
+  const kind=slot==="ringL"||slot==="ringR"?"ring":slot,T=GEAR_BASE[kind];
+  const tier=kind==="ring"?ri(T.length):Math.min(T.length-1,ri(2)+(d>=2?ri(2):0)+(d>=4?ri(2):0));
+  const rr=R(),rarity=rr<0.08?2:rr<0.35?1:0;
+  const it={uid:++gearUid,slot:kind,tier:tier+1,name:T[tier][0],base:Object.assign({},T[tier][1]),rarity:rarity,lvl:0,xp:0,extra:{}};
+  if(rarity===1)it.name=UNC_PRE[ri(UNC_PRE.length)]+" "+lowerFirst(it.name);
+  if(rarity===2){
+    it.name=it.name+" "+RARE_SUF[ri(RARE_SUF.length)];
+    const noDef=kind==="weapon"||kind==="ring"||kind==="cape"||kind==="gauntlets"||kind==="bracers";
+    const pool=["hp","atk","def","dodge","crit","light","goldFind","regen"].filter(k=>it.base[k]===undefined&&!(k==="def"&&noDef));
+    const k=pool[ri(pool.length)];
+    it.extra[k]=k==="hp"?2:(k==="dodge"||k==="crit")?5:k==="goldFind"?15:1;
+  }
+  return it;
+}
+function itemStats(it){
+  const s=Object.assign({},it.base,it.extra||{}),L=it.lvl||0;
+  if(L>0){
+    if(s.atk!==undefined)s.atk+=Math.floor(L/2);
+    if(s.def!==undefined&&L>=3)s.def+=1;
+    if(s.hp!==undefined)s.hp+=L;
+    if(s.dodge!==undefined)s.dodge+=5*L;
+    if(s.crit!==undefined)s.crit+=5*L;
+    if(s.goldFind!==undefined)s.goldFind+=10*L;
+    if(s.light!==undefined&&L>=3)s.light+=1;
+    if(s.regen!==undefined)s.regen+=L>=4?2:(L>=2?1:0);
+  }
+  return s;
+}
+function itemName(it){return it.name+(it.lvl?" +"+it.lvl:"");}
+function statLine(it){const s=itemStats(it);return Object.keys(STAT_FMT).filter(k=>s[k]).map(k=>STAT_FMT[k](s[k])).join(", ");}
+function rarityColor(it){return !it?"var(--df-muted)":it.rarity===2?"#AFA9EC":it.rarity===1?"var(--df-accent)":"var(--df-text)";}
+function sellValue(it){return 2+it.tier*2+it.rarity*3+it.lvl;}
+function itemScore(it){if(!it)return 0;const s=itemStats(it);return (s.atk||0)*3+(s.def||0)*3+(s.hp||0)+(s.light||0)*2+(s.dodge||0)/5+(s.crit||0)/5+(s.goldFind||0)/10+(s.regen||0)*2+(s.poisonRes?1.5:0);}
+function currentFor(it){
+  if(it.slot!=="ring")return gear[it.slot];
+  if(gear.ringL&&gear.ringR)return itemScore(gear.ringL)<=itemScore(gear.ringR)?gear.ringL:gear.ringR;
+  return gear.ringL||gear.ringR;
+}
+function compareText(it,cur){if(!cur)return "nothing in that slot yet";const a=itemScore(it),b=itemScore(cur);return a>b?"looks better than your "+itemName(cur):a<b?"not better than your "+itemName(cur):"about the same as your "+itemName(cur);}
+function gearLvlText(it){return it.rarity===0?"Common gear does not grow.":it.lvl>=GEAR_LVL.length?"Fully grown.":"Grows with your kills: "+it.xp+"/"+GEAR_LVL[it.lvl]+" to +"+(it.lvl+1)+(it.rarity===2?" (rare: grows twice as fast)":"");}
+function gearSum(stat){let t=0;for(const s of SLOTS){const it=gear[s];if(it){const v=itemStats(it)[stat];if(v)t+=v;}}return t;}
+function gearAtk(){return gear.weapon?(itemStats(gear.weapon).atk||0):0;}
+function goldAdj(g){const f=gearSum("goldFind");return f>0?Math.round(g*(1+f/100)):g;}
+function strikeDmg(){let d=atk()+(R()<0.3?1:0);const c=gearSum("crit");if(c>0&&R()<c/100){d+=Math.max(1,Math.ceil(atk()/2));floatTxt(px,py,"crit!","#FAC775");}return d;}
+function regenTick(){const r=gearSum("regen");if(r>0&&hp>0&&hp<maxHp()&&turnCount%Math.max(2,7-r)===0){hp++;floatTxt(px,py,"+1","#9FE1CB");}}
+function gearXp(){
+  for(const s of SLOTS){
+    const it=gear[s];
+    if(!it||it.rarity===0||it.lvl>=GEAR_LVL.length)continue;
+    it.xp+=it.rarity===2?2:1;
+    if(it.xp>=GEAR_LVL[it.lvl]){it.lvl++;pushMsg("Your "+itemName(it)+" grows stronger ("+statLine(it)+").");floatTxt(px,py,"+"+it.lvl+" gear","#EF9F27");}
+  }
+}
+function onGearChange(){if(hp>maxHp())hp=maxHp();updateHud();if(gearOpen)renderGear();}
+function gainItem(it,x,y){
+  const slotFor=it.slot==="ring"?(gear.ringL?(gear.ringR?null:"ringR"):"ringL"):(gear[it.slot]?null:it.slot);
+  if(slotFor){
+    gear[slotFor]=it;floatTxt(x,y,it.name+"!","#FAC775");
+    pushMsg((it.slot==="weapon"?"You take up the ":"You don the ")+itemName(it)+" ("+statLine(it)+").");
+    onGearChange();return;
+  }
+  if(bag.length>=BAG_MAX){const g=sellValue(it);gold+=g;if(evt)evt.gold+=g;floatTxt(x,y,"+"+g,"#EF9F27");pushMsg("Pack full - the "+itemName(it)+" is sold for "+g+" gold.");return;}
+  bag.push(it);newGear++;
+  floatTxt(x,y,it.name,"#B5D4F4");
+  pushMsg("Found "+itemName(it)+" ("+statLine(it)+") - "+compareText(it,currentFor(it))+". It is in your pack.");
+  touchHud();
+}
+function equipFromBag(i,slot){
+  const it=bag[i];if(!it)return;
+  const target=slot||(it.slot==="ring"?(gear.ringL?(gear.ringR?"ringL":"ringR"):"ringL"):it.slot);
+  if(it.slot==="ring"&&target!=="ringL"&&target!=="ringR")return;
+  if(it.slot!=="ring"&&target!==it.slot)return;
+  const cur=gear[target];
+  bag.splice(i,1);gear[target]=it;
+  if(cur)bag.push(cur);
+  gearSel={where:target};
+  pushMsg("You equip the "+itemName(it)+".");
+  onGearChange();
+}
+function unequip(slot){const it=gear[slot];if(!it)return;if(bag.length>=BAG_MAX){pushMsg("Your pack is full.");return;}gear[slot]=null;bag.push(it);gearSel={where:"bag",i:bag.length-1};onGearChange();}
+function sellItem(where,i){
+  let it;
+  if(where==="bag")it=bag.splice(i,1)[0];else{it=gear[where];gear[where]=null;}
+  if(!it)return;
+  const g=sellValue(it);gold+=g;pushMsg("Sold the "+itemName(it)+" for "+g+" gold.");
+  gearSel=null;onGearChange();
+}
 let rival=null;
 let floaters=[],msgs=[],evt=null;
 function idx(x,y){return y*TW+x;}
@@ -240,9 +378,9 @@ function computeVis(){
 }
 function monsterAt(x,y){for(const m of monsters)if(m.x===x&&m.y===y)return m;return null;}
 function walkable(x,y){const t=grid[idx(x,y)];return inB(x,y)&&t!==WALL&&t!==CHEST;}
-function atk(){return cls.atk+weapon.atk+Math.floor((level-1)/2);}
-function defTotal(){return cls.def+armor.def;}
-function lightR(){return cls.light+(lightTimer>0?2:0);}
+function atk(){return cls.atk+gearSum("atk")+Math.floor((level-1)/2);}
+function defTotal(){return cls.def+gearSum("def");}
+function lightR(){return cls.light+gearSum("light")+(lightTimer>0?2:0);}
 function gainXp(n){
   xp+=n;
   while(xp>=level*10){
@@ -258,36 +396,27 @@ function hitMonster(m,dmg,label,byRival){
   if(m.hp<=0){
     monDeathLesson(m);
     monsters.splice(monsters.indexOf(m),1);
-    const g=m.skel?3:1;
+    let g=m.skel?3:1;
     if(byRival){if(rival)rival.gold+=g;}
     else{
-      gold+=g;
+      g=goldAdj(g);gold+=g;
       gainXp(m.skel?5:m.spider?3:2);
-      if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+mname(m)+" dropped a potion.");}
       if(evt)evt.kill++;
+      gearXp();
+      if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+mname(m)+" dropped a potion.");}
+      else if(R()<(m.skel?0.25:m.spider?0.1:0.04))gainItem(makeItem(rollSlot(),depth),m.x,m.y);
     }
-    pushMsg(label+" slays the "+mname(m)+(byRival?".":" (+"+g+" gold, +"+(m.skel?5:2)+" xp)."));
+    pushMsg(label+" slays the "+mname(m)+(byRival?".":" (+"+g+" gold, +"+(m.skel?5:m.spider?3:2)+" xp)."));
   }else pushMsg(label+" hits the "+mname(m)+" for "+dmg+".");
 }
 function lootChest(x,y){
   grid[idx(x,y)]=CHESTO;
   const roll=R();
-  if(roll<0.3){const g=5+ri(6)+depth*3;gold+=g;if(evt)evt.gold+=g;floatTxt(x,y,"+"+g,"#EF9F27");pushMsg("A chest of coins: +"+g+" gold.");}
-  else if(roll<0.5){inv.potion++;floatTxt(x,y,"potion","#F09595");pushMsg("Found a healing potion.");}
-  else if(roll<0.62){arrows+=6;floatTxt(x,y,"+6 arrows","#9FE1CB");pushMsg("A bundle of arrows (+6).");}
-  else if(roll<0.74){inv.scroll++;floatTxt(x,y,"scroll","#AFA9EC");pushMsg("A scroll of torchlight.");}
-  else if(roll<0.88){
-    let tier=Math.min(4,1+ri(2)+(depth>=2?ri(2):0));
-    const w=WEAPONS[tier-1];
-    if(w[1]>weapon.atk){weapon={name:w[0],atk:w[1]};floatTxt(x,y,w[0]+"!","#FAC775");pushMsg("You take up the "+w[0].toLowerCase()+" (ATK now "+atk()+").");}
-    else{gold+=3;floatTxt(x,y,"+3","#EF9F27");pushMsg("A "+w[0].toLowerCase()+" - no better than yours. Sold for 3 gold.");}
-  }
-  else{
-    let tier=Math.min(3,1+(depth>=2?ri(2):0)+(R()<0.3?1:0));
-    const a=ARMORS[tier-1];
-    if(a[1]>armor.def){armor={name:a[0],def:a[1]};floatTxt(x,y,a[0]+"!","#B5D4F4");pushMsg("You don the "+a[0].toLowerCase()+" armor (DEF now "+defTotal()+").");}
-    else{gold+=3;floatTxt(x,y,"+3","#EF9F27");pushMsg("Spare "+a[0].toLowerCase()+" armor, no better than yours. Sold for 3 gold.");}
-  }
+  if(roll<0.28){const g=goldAdj(5+ri(6)+depth*3);gold+=g;if(evt)evt.gold+=g;floatTxt(x,y,"+"+g,"#EF9F27");pushMsg("A chest of coins: +"+g+" gold.");}
+  else if(roll<0.46){inv.potion++;floatTxt(x,y,"potion","#F09595");pushMsg("Found a healing potion.");}
+  else if(roll<0.56){arrows+=6;floatTxt(x,y,"+6 arrows","#9FE1CB");pushMsg("A bundle of arrows (+6).");}
+  else if(roll<0.66){inv.scroll++;floatTxt(x,y,"scroll","#AFA9EC");pushMsg("A scroll of torchlight.");}
+  else gainItem(makeItem(rollSlot(),depth),x,y);
   if(evt)evt.chest++;
 }
 function playerAct(dx,dy){
@@ -297,7 +426,7 @@ function playerAct(dx,dy){
   if(inB(nx,ny)){
     const m=monsterAt(nx,ny);
     const t=grid[idx(nx,ny)];
-    if(m)hitMonster(m,atk()+(R()<0.3?1:0),cls.name);
+    if(m)hitMonster(m,strikeDmg(),cls.name);
     else if(t===CHEST)lootChest(nx,ny);
     else if(walkable(nx,ny)){
       px=nx;py=ny;
@@ -311,7 +440,7 @@ function playerAct(dx,dy){
   }
   endTurn();
 }
-function maxHp(){return cls.hp+(level-1)*2;}
+function maxHp(){return cls.hp+(level-1)*2+gearSum("hp");}
 function ability(){
   if(state!=="play")return;
   if(cls.name==="Warrior"){
@@ -367,10 +496,11 @@ function tickPoison(){
   }
 }
 function endTurn(){
+  turnCount++;
   if(cd>0)cd--;
   if(lightTimer>0)lightTimer--;
   if(cls.name==="Mage")mana=Math.min(12,mana+1);
-  tickPoison();
+  tickPoison();regenTick();
   monstersTurn();computeVis();updateHud();
 }
 const MSENS=11,MACT=5;
@@ -430,11 +560,16 @@ function attackDelver(m,who){
     if(rival.hp<=0){rival.dead=true;pushMsg("Your rival has fallen! Their gold is lost to the dark.");}
     return dmg;
   }
+  const dg=gearSum("dodge");
+  if(dg>0&&R()<dg/100){floatTxt(px,py,"dodge","#9FE1CB");pushMsg("You dodge the "+mname(m)+".");return 0;}
   const dmg=Math.max(1,m.atk-defTotal()+(R()<0.3?1:0));
   hp-=dmg;if(evt)evt.dmg+=dmg;
   floatTxt(px,py,"-"+dmg,"#E24B4A");
   pushMsg("The "+mname(m)+" hits you for "+dmg+".");
-  if(m.spider&&R()<0.5&&poisonTimer<=0){poisonTimer=3;floatTxt(px,py,"poison!","#97C459");pushMsg("Venom burns in your veins (3 turns).");}
+  if(m.spider&&R()<0.5&&poisonTimer<=0){
+    if(gearSum("poisonRes")>0){floatTxt(px,py,"resist","#97C459");pushMsg("The venom cannot take hold.");}
+    else{poisonTimer=3;floatTxt(px,py,"poison!","#97C459");pushMsg("Venom burns in your veins (3 turns).");}
+  }
   return dmg;
 }
 function nearestDelverTo(m){
@@ -615,7 +750,7 @@ function monstersTurn(){
 function renderInv(){
   const eq=document.getElementById("inv-equip"),it=document.getElementById("inv-items");
   if(!eq)return;
-  eq.textContent="Wielding "+weapon.name.toLowerCase()+" - wearing "+armor.name.toLowerCase()+(lightTimer>0?" - light blazing ("+lightTimer+")":"");
+  eq.textContent="Wielding "+(gear.weapon?itemName(gear.weapon):"fists").toLowerCase()+" - wearing "+(gear.chest?itemName(gear.chest):"cloth").toLowerCase()+(lightTimer>0?" - light blazing ("+lightTimer+")":"")+(bag.length?" - pack "+bag.length+"/"+BAG_MAX:"");
   let html="";
   if(inv.potion>0)html+='<button id="inv-potion">Potion x'+inv.potion+' (Q)</button>';
   if(inv.scroll>0)html+='<button id="inv-scroll">Scroll x'+inv.scroll+' (E)</button>';
@@ -712,7 +847,7 @@ function sensor(){
   let adj=0;
   for(const m of monsters)if(Math.abs(m.x-px)<=1&&Math.abs(m.y-py)<=1)adj++;
   const res=cls.name==="Ranger"?Math.min(1,arrows/12):cls.name==="Mage"?mana/12:(cd===0?1:0);
-  v.push(Math.min(1,inv.potion/3),inv.scroll>0?1:0,res,lightTimer>0?1:0,weapon.atk/4,armor.def/3,Math.min(1,adj/3),poisonTimer>0?1:0);
+  v.push(Math.min(1,inv.potion/3),inv.scroll>0?1:0,res,lightTimer>0?1:0,gearAtk()/4,gearSum("def")/3,Math.min(1,adj/3),poisonTimer>0?1:0);
   return v;
 }
 function brainIn(b){return b[0].w[0].length;}
@@ -724,16 +859,17 @@ function aiRespawn(){
   ai.episodes++;
   if(depth>ai.bestDepth)ai.bestDepth=depth;
   pushMsg("The "+cls.name.toLowerCase()+" falls at depth "+(depth+1)+". Life "+(ai.episodes+1)+" begins.");
-  level=1;xp=0;weapon={name:"Fists",atk:0};armor={name:"Cloth",def:0};
+  level=1;xp=0;gear=emptyGear();bag=[];newGear=0;gearSel=null;turnCount=0;
   inv={potion:0,scroll:0};lightTimer=0;poisonTimer=0;
   hp=maxHp();gold=0;depth=0;arrows=cls.name==="Ranger"?12:0;mana=cls.name==="Mage"?12:0;cd=0;
   genLevel();updateHud();
 }
 function turnUpkeep(){
+  turnCount++;
   if(cd>0)cd--;
   if(lightTimer>0)lightTimer--;
   if(cls.name==="Mage")mana=Math.min(12,mana+1);
-  tickPoison();
+  tickPoison();regenTick();
   monstersTurn();
   const fresh=computeVis();
   updateHud();
@@ -819,7 +955,7 @@ function aiMove(dx,dy){
   if(inB(nx,ny)){
     const m=monsterAt(nx,ny);
     const t=grid[idx(nx,ny)];
-    if(m)hitMonster(m,atk()+(R()<0.3?1:0),cls.name);
+    if(m)hitMonster(m,strikeDmg(),cls.name);
     else if(t===CHEST)lootChest(nx,ny);
     else if(walkable(nx,ny)){
       px=nx;py=ny;
@@ -1015,7 +1151,8 @@ function buildSelect(){
 }
 function startGame(i){
   cls=CLASSES[i];gold=0;depth=0;fx=1;fy=0;state="play";
-  level=1;xp=0;weapon={name:"Fists",atk:0};armor={name:"Cloth",def:0};
+  level=1;xp=0;gear=emptyGear();bag=[];newGear=0;gearSel=null;turnCount=0;
+  toggleGear(false);adminOpen=false;
   inv={potion:1,scroll:0};lightTimer=0;poisonTimer=0;cd=0;hp=maxHp();
   arrows=cls.name==="Ranger"?12:0;
   mana=cls.name==="Mage"?12:0;
@@ -1034,7 +1171,7 @@ function startGame(i){
   if(touchWanted())pushMsg("Tap the dungeon to step that way, hold to keep walking, pinch or Zoom to see more. Map shows the whole level.");
   genLevel();updateHud();cv.focus();refreshBrainList();monInfo();
 }
-document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";
+document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";toggleGear(false);adminOpen=false;
   document.getElementById("select").style.display="flex";
   document.getElementById("stage").style.display="none";
   document.getElementById("pad").style.display="none";
@@ -1045,7 +1182,7 @@ document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.rando
   document.getElementById("airow").style.display="none";
   document.getElementById("monrow").style.display="none";
   document.getElementById("iorow").style.display="none";
-  document.getElementById("btn-io").textContent="Export / Import";};
+  document.getElementById("btn-io").textContent="Export / Import";applyTouchLayout();};
 document.querySelectorAll("#pad [data-mv]").forEach(b=>{
   const mv=b.getAttribute("data-mv").split(",");
   b.onclick=()=>{if(ai.mode==="off")playerAct(parseInt(mv[0],10),parseInt(mv[1],10));};
@@ -1058,6 +1195,9 @@ document.addEventListener("keydown",e=>{
   const tg=e.target&&e.target.tagName;
   if(tg==="TEXTAREA"||tg==="INPUT"||tg==="SELECT")return;
   if(e.ctrlKey||e.metaKey||e.altKey||state==="select")return;
+  if(e.key==="Escape"){if(gearOpen||adminOpen){e.preventDefault();toggleGear(false);toggleAdmin(false);}return;}
+  if(e.key==="i"||e.key==="I"){e.preventDefault();toggleGear(!gearOpen);return;}
+  if(gearOpen||adminOpen)return;
   if(e.key==="+"||e.key==="="){e.preventDefault();zoomBy(1.25);return;}
   if(e.key==="-"||e.key==="_"){e.preventDefault();zoomBy(0.8);return;}
   if(e.key==="0"){e.preventDefault();setZoom(0);return;}
@@ -1113,8 +1253,76 @@ function applyTouchLayout(){
   document.getElementById("btn-touch").textContent="Touch pad: "+touchPref;
   document.getElementById("btn-dpad").textContent="D-pad: "+dpadPref;
   document.getElementById("tk-full").style.display=(document.fullscreenEnabled&&DF_ROOT.requestFullscreen)?"":"none";
+  const ad=document.getElementById("admin");
+  ad.classList.toggle("sheet",adminOpen);
+  document.getElementById("admin-head").style.display=adminOpen?"flex":"none";
+  ad.style.display=inGame&&(adminOpen||!on)?"":"none";
   touchHud();fitCanvas();
 }
+function toggleAdmin(open){adminOpen=!!open;applyTouchLayout();}
+function toggleGear(open){
+  gearOpen=!!open;
+  document.getElementById("gear").style.display=gearOpen?"":"none";
+  if(gearOpen){newGear=0;renderGear();}
+  touchHud();
+}
+function renderGear(){
+  if(!gearOpen||!cls)return;
+  const extras=[];
+  if(gearSum("dodge"))extras.push("dodge "+gearSum("dodge")+"%");
+  if(gearSum("crit"))extras.push("crit "+gearSum("crit")+"%");
+  if(gearSum("regen"))extras.push("regen");
+  if(gearSum("goldFind"))extras.push("gold +"+gearSum("goldFind")+"%");
+  if(gearSum("poisonRes"))extras.push("venom resist");
+  document.getElementById("gear-sum").textContent="ATK "+atk()+" - DEF "+defTotal()+" - HP "+Math.max(0,hp)+"/"+maxHp()+" - light "+lightR().toFixed(1)+(extras.length?" - "+extras.join(", "):"")+" - "+gold+" gold";
+  document.getElementById("doll").innerHTML=DOLL_ORDER.map(s=>{
+    const it=gear[s],sel=gearSel&&gearSel.where===s;
+    return '<div class="dslot'+(sel?" sel":"")+'" data-slot="'+s+'"><div class="dl">'+SLOT_LABEL[s]+'</div><div class="dn" style="color:'+rarityColor(it)+'">'+(it?itemName(it):"-")+'</div><div class="ds">'+(it?statLine(it):"empty")+'</div></div>';
+  }).join("");
+  document.getElementById("bag-h").textContent="Pack ("+bag.length+"/"+BAG_MAX+")";
+  document.getElementById("bag").innerHTML=bag.length?bag.map((it,i)=>{
+    const sel=gearSel&&gearSel.where==="bag"&&gearSel.i===i;
+    return '<div class="brow'+(sel?" sel":"")+'" data-bag="'+i+'"><span class="bn" style="color:'+rarityColor(it)+'">'+itemName(it)+'</span><span class="bs">'+SLOT_LABEL[it.slot]+' - '+(statLine(it)||"no bonuses")+'</span></div>';
+  }).join(""):'<div class="bs" style="padding:6px 2px;">Your pack is empty. Chests and the stronger monsters drop gear; an empty slot equips itself.</div>';
+  renderGearDetail();
+}
+function renderGearDetail(){
+  const d=document.getElementById("gear-detail");
+  const where=gearSel&&gearSel.where;
+  const it=gearSel?(where==="bag"?bag[gearSel.i]:gear[where]):null;
+  if(!it){d.style.display="none";d.innerHTML="";return;}
+  d.style.display="block";
+  const rar=it.rarity===2?"Rare":it.rarity===1?"Uncommon":"Common";
+  let html='<div style="font-weight:500;color:'+rarityColor(it)+'">'+itemName(it)+'</div>';
+  html+='<div class="bs">'+rar+' '+SLOT_LABEL[it.slot].toLowerCase()+' - tier '+it.tier+'</div>';
+  html+='<div style="margin-top:4px;">'+(statLine(it)||"no bonuses")+'</div>';
+  html+='<div class="bs">'+gearLvlText(it)+'</div>';
+  if(where==="bag")html+='<div class="bs">'+compareText(it,currentFor(it))+'</div>';
+  html+='<div class="acts">';
+  if(where==="bag"){
+    if(it.slot==="ring")html+='<button data-act="equip" data-arg="ringL">Equip left</button><button data-act="equip" data-arg="ringR">Equip right</button>';
+    else html+='<button data-act="equip">Equip</button>';
+  }else html+='<button data-act="unequip">Unequip</button>';
+  html+='<button data-act="sell">Sell for '+sellValue(it)+' gold</button></div>';
+  d.innerHTML=html;
+}
+document.getElementById("gear").addEventListener("click",e=>{
+  const t=e.target.closest("[data-act],[data-slot],[data-bag]");
+  if(!t)return;
+  if(t.dataset.act){
+    if(t.dataset.act==="equip"&&gearSel&&gearSel.where==="bag")equipFromBag(gearSel.i,t.dataset.arg||null);
+    else if(t.dataset.act==="unequip"&&gearSel&&gearSel.where!=="bag")unequip(gearSel.where);
+    else if(t.dataset.act==="sell"&&gearSel)sellItem(gearSel.where,gearSel.i);
+    renderGear();return;
+  }
+  if(t.dataset.slot!==undefined){gearSel={where:t.dataset.slot};renderGear();return;}
+  if(t.dataset.bag!==undefined){gearSel={where:"bag",i:parseInt(t.dataset.bag,10)};renderGear();}
+});
+document.getElementById("gear-close").onclick=()=>toggleGear(false);
+document.getElementById("tk-gear").onclick=()=>toggleGear(!gearOpen);
+document.getElementById("btn-gear").onclick=()=>toggleGear(!gearOpen);
+document.getElementById("btn-menu").onclick=()=>toggleAdmin(!adminOpen);
+document.getElementById("admin-close").onclick=()=>toggleAdmin(false);
 function touchHud(){
   if(!cls)return;
   let lbl=cls.ability;
@@ -1124,7 +1332,9 @@ function touchHud(){
   document.getElementById("tk-ability").textContent=lbl;
   document.getElementById("tk-potion").textContent="Potion"+(inv.potion>0?" x"+inv.potion:"");
   document.getElementById("tk-scroll").textContent="Scroll"+(inv.scroll>0?" x"+inv.scroll:"");
-  document.getElementById("tk-full").textContent=document.fullscreenElement?"Exit full":"Full screen";
+  document.getElementById("tk-full").textContent=document.fullscreenElement?"Exit full":"Full";
+  document.getElementById("tk-gear").textContent="Gear"+(newGear?" ("+newGear+")":"");
+  document.getElementById("btn-gear").textContent="Gear (I)"+(newGear?" +"+newGear:"");
   document.getElementById("tpad").classList.toggle("ai-on",ai.mode!=="off");
 }
 const HOLD_DELAY=320,HOLD_REPEAT=140;
@@ -1468,7 +1678,7 @@ setInterval(()=>{
 <script id="version-stamp">
 /* GENERATED by tools/stamp.js - do not edit by hand (single-file game;
    the version block lives inline so the hosted artifact keeps it too). */
-window.DELVEFORGE_VERSION = { version: "0.11.0", built: "2026-10-07 14:21" };
+window.DELVEFORGE_VERSION = { version: "0.12.0", built: "2026-10-07 14:43" };
 (function () {
   var text = "v" + DELVEFORGE_VERSION.version + " - updated " + DELVEFORGE_VERSION.built;
   var els = document.querySelectorAll(".version-tag");
