@@ -14,6 +14,20 @@ body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0
 #df-root input[type=range]{accent-color:var(--df-accent);}
 .card{border:1px solid var(--df-border);border-radius:12px;padding:12px;cursor:pointer;text-align:center;flex:1;background:var(--df-panel);}
 .card:hover{border-color:var(--df-accent);}
+#df-root{touch-action:manipulation;}
+#cv{touch-action:none;}
+#tpad{display:none;position:sticky;bottom:0;z-index:5;margin:8px -10px 0;padding:8px 10px 10px;background:var(--df-bg);border-top:1px solid var(--df-border);align-items:center;justify-content:space-between;gap:10px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+#tpad.ai-on{opacity:0.45;}
+.dpad{display:grid;grid-template-areas:". u ." "l c r" ". d .";grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:4px;}
+.tacts{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;flex:1;max-width:230px;}
+#df-root .tk{font-size:15px;min-height:56px;min-width:56px;padding:0 8px;border-radius:12px;touch-action:none;}
+#df-root .tk.held,#df-root .tk:active{background:var(--df-panel2);border-color:var(--df-accent);}
+@media (max-width:600px){
+  body{margin:0.5rem auto;}
+  #select{flex-direction:column;}
+  #hud{gap:8px;font-size:13px;}
+  #brainbox{transform:scale(0.66);transform-origin:top right;}
+}
 </style>
 </head>
 <body>
@@ -70,6 +84,21 @@ DF_ROOT.innerHTML=`
   <button id="btn-map">Map (M)</button>
   <span style="font-size:11.5px;color:var(--df-muted);margin-left:auto;">arrows/WASD - click the dungeon first</span>
 </div>
+<div id="tpad">
+  <div class="dpad">
+    <button class="tk" data-tmv="0,-1" style="grid-area:u;" aria-label="Move up">&#9650;</button>
+    <button class="tk" data-tmv="-1,0" style="grid-area:l;" aria-label="Move left">&#9664;</button>
+    <button class="tk" id="tk-wait" style="grid-area:c;" aria-label="Wait a turn">Wait</button>
+    <button class="tk" data-tmv="1,0" style="grid-area:r;" aria-label="Move right">&#9654;</button>
+    <button class="tk" data-tmv="0,1" style="grid-area:d;" aria-label="Move down">&#9660;</button>
+  </div>
+  <div class="tacts">
+    <button class="tk" id="tk-ability">Ability</button>
+    <button class="tk" id="tk-potion">Potion</button>
+    <button class="tk" id="tk-scroll">Scroll</button>
+    <button class="tk" id="tk-map">Map</button>
+  </div>
+</div>
 <div id="airow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel);">
   <button id="btn-ai" style="font-weight:500;">AI: off</button>
   <span id="ai-info" style="font-size:12px;color:var(--df-muted);"></span>
@@ -101,6 +130,7 @@ DF_ROOT.innerHTML=`
   <span style="margin-left:auto;"></span>
   <button id="btn-mon-fresh">Forget everything</button>
   <button id="btn-theme">Theme: dark</button>
+  <button id="btn-touch">Touch pad: auto</button>
 </div>
 <div class="version-tag" style="margin:8px 2px 0;font-size:11px;color:var(--df-muted);"></div>`;
 const TW=40,TH=26,WALL=0,FLOOR=1,STAIRS=3,CHEST=5,CHESTO=6;
@@ -597,6 +627,7 @@ function updateHud(){
   document.getElementById("h-depth").textContent=(LEVELS[Math.min(depth,LEVELS.length-1)])+" ("+(depth+1)+")";
   document.getElementById("h-seed").textContent="seed "+baseSeed;
   document.getElementById("h-rival").textContent=rival?(rival.dead?"rival: fallen":"rival: "+rival.gold+" gold"):"";
+  touchHud();
 }
 const NFCLIP=5;
 function nfClip(g){return g>NFCLIP?NFCLIP:(g<-NFCLIP?-NFCLIP:g);}
@@ -924,7 +955,7 @@ document.getElementById("btn-ai").onclick=()=>{
   document.getElementById("btn-ai").textContent="AI: "+(ai.mode==="off"?"off":ai.mode);
   if(ai.mode!=="off")aiEnsureBrain();
   if(ai.mode==="off"&&hp<=0){state="dead";document.getElementById("dead").style.display="flex";}
-  aiInfo();
+  aiInfo();touchHud();
 };
 const aspd=document.getElementById("ai-speed");
 aspd.oninput=()=>{ai.sps=parseInt(aspd.value,10);document.getElementById("ai-speed-out").textContent=ai.sps+"/s";};
@@ -980,7 +1011,7 @@ function startGame(i){
   msgs=[];floaters=[];shots=[];
   document.getElementById("select").style.display="none";
   document.getElementById("stage").style.display="";
-  document.getElementById("pad").style.display="flex";
+  applyTouchLayout();
   document.getElementById("hud").style.display="flex";
   document.getElementById("log").style.display="";
   document.getElementById("invrow").style.display="flex";
@@ -989,12 +1020,14 @@ function startGame(i){
   document.getElementById("iorow").style.display="none";
   document.getElementById("dead").style.display="none";
   pushMsg("You enter the abandoned manor. Find the stairs down.");
+  if(touchWanted())pushMsg("Swipe or tap the dungeon to step. Hold a pad arrow to keep walking.");
   genLevel();updateHud();cv.focus();refreshBrainList();monInfo();
 }
 document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";
   document.getElementById("select").style.display="flex";
   document.getElementById("stage").style.display="none";
   document.getElementById("pad").style.display="none";
+  document.getElementById("tpad").style.display="none";
   document.getElementById("hud").style.display="none";
   document.getElementById("log").style.display="none";
   document.getElementById("invrow").style.display="none";
@@ -1021,6 +1054,88 @@ document.addEventListener("keydown",e=>{
   else if(k==="e"){e.preventDefault();readScroll();}
   else if(k==="m"){showMap=!showMap;}
 });
+/* ---- phone controls (v0.10): thumb pad, hold-to-walk, swipe/tap on the dungeon ---- */
+const TOUCH_Q=window.matchMedia?window.matchMedia("(pointer: coarse)"):null;
+let touchPref="auto";
+try{touchPref=localStorage.getItem("df_touch")||"auto";}catch(e){}
+if(touchPref!=="on"&&touchPref!=="off")touchPref="auto";
+function touchWanted(){return touchPref==="on"||(touchPref==="auto"&&!!(TOUCH_Q&&TOUCH_Q.matches));}
+function applyTouchLayout(){
+  const inGame=state!=="select",on=inGame&&touchWanted();
+  document.getElementById("tpad").style.display=on?"flex":"none";
+  document.getElementById("pad").style.display=inGame&&!on?"flex":"none";
+  document.getElementById("btn-touch").textContent="Touch pad: "+touchPref;
+  touchHud();
+}
+function touchHud(){
+  if(!cls)return;
+  let lbl=cls.ability;
+  if(cls.name==="Warrior")lbl+=cd>0?" ("+cd+")":"";
+  else if(cls.name==="Ranger")lbl+=" x"+arrows;
+  else lbl+=" "+mana+" mp";
+  document.getElementById("tk-ability").textContent=lbl;
+  document.getElementById("tk-potion").textContent="Potion"+(inv.potion>0?" x"+inv.potion:"");
+  document.getElementById("tk-scroll").textContent="Scroll"+(inv.scroll>0?" x"+inv.scroll:"");
+  document.getElementById("tpad").classList.toggle("ai-on",ai.mode!=="off");
+}
+const HOLD_DELAY=320,HOLD_REPEAT=140;
+let holdTimer=null,holdBtn=null;
+function tpadStop(){
+  if(holdTimer){clearTimeout(holdTimer);holdTimer=null;}
+  if(holdBtn){holdBtn.classList.remove("held");holdBtn=null;}
+}
+function tpadFire(b){
+  if(ai.mode!=="off")return;
+  const mv=b.getAttribute("data-tmv");
+  if(mv){const p=mv.split(",");playerAct(parseInt(p[0],10),parseInt(p[1],10));}
+  else if(b.id==="tk-wait"&&state==="play")endTurn();
+}
+document.querySelectorAll("#tpad .dpad .tk").forEach(b=>{
+  b.addEventListener("pointerdown",e=>{
+    if(e.pointerType==="mouse"&&e.button!==0)return;
+    e.preventDefault();
+    try{b.setPointerCapture(e.pointerId);}catch(err){}
+    tpadStop();
+    holdBtn=b;b.classList.add("held");
+    tpadFire(b);
+    const rep=()=>{tpadFire(b);holdTimer=setTimeout(rep,HOLD_REPEAT);};
+    holdTimer=setTimeout(rep,HOLD_DELAY);
+  });
+  ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>b.addEventListener(ev,tpadStop));
+  b.addEventListener("contextmenu",e=>e.preventDefault());
+});
+document.getElementById("tk-ability").onclick=()=>{if(ai.mode==="off")ability();};
+document.getElementById("tk-potion").onclick=()=>{if(ai.mode==="off")drinkPotion();};
+document.getElementById("tk-scroll").onclick=()=>{if(ai.mode==="off")readScroll();};
+document.getElementById("tk-map").onclick=()=>{showMap=!showMap;};
+document.getElementById("btn-touch").onclick=()=>{
+  touchPref=touchPref==="auto"?"on":touchPref==="on"?"off":"auto";
+  try{localStorage.setItem("df_touch",touchPref);}catch(e){}
+  applyTouchLayout();
+};
+if(TOUCH_Q&&TOUCH_Q.addEventListener)TOUCH_Q.addEventListener("change",applyTouchLayout);
+let swipe=null;
+cv.addEventListener("pointerdown",e=>{
+  if(e.pointerType==="mouse"&&e.button!==0)return;
+  swipe={x:e.clientX,y:e.clientY,id:e.pointerId};
+  try{cv.setPointerCapture(e.pointerId);}catch(err){}
+});
+cv.addEventListener("pointerup",e=>{
+  const s=swipe;swipe=null;
+  if(!s||e.pointerId!==s.id)return;
+  if(state!=="play"||ai.mode!=="off")return;
+  if(e.pointerType==="mouse"&&!touchWanted())return;
+  const dx=e.clientX-s.x,dy=e.clientY-s.y,ax=Math.abs(dx),ay=Math.abs(dy);
+  if(Math.max(ax,ay)>=18){
+    if(ax>=ay)playerAct(dx>0?1:-1,0);else playerAct(0,dy>0?1:-1);
+    return;
+  }
+  const r=cv.getBoundingClientRect(),ts=r.width/TW;
+  const tx=(e.clientX-r.left)/ts-(px+0.5),ty=(e.clientY-r.top)/ts-(py+0.5);
+  if(Math.abs(tx)<0.5&&Math.abs(ty)<0.5){endTurn();return;}
+  if(Math.abs(tx)>=Math.abs(ty))playerAct(tx>0?1:-1,0);else playerAct(0,ty>0?1:-1);
+});
+cv.addEventListener("pointercancel",()=>{swipe=null;});
 function draw(t){
   const w=cv.getBoundingClientRect().width,h=Math.round(w*TH/TW);
   if(w<10)return;
@@ -1240,7 +1355,7 @@ setInterval(()=>{
 <script id="version-stamp">
 /* GENERATED by tools/stamp.js - do not edit by hand (single-file game;
    the version block lives inline so the hosted artifact keeps it too). */
-window.DELVEFORGE_VERSION = { version: "0.9.1", built: "2026-08-11 15:06" };
+window.DELVEFORGE_VERSION = { version: "0.10.0", built: "2026-10-07 13:59" };
 (function () {
   var text = "v" + DELVEFORGE_VERSION.version + " - updated " + DELVEFORGE_VERSION.built;
   var els = document.querySelectorAll(".version-tag");

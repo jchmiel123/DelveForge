@@ -21,6 +21,7 @@ refers to functions in that file.
 | Brain roster | brainStore, refreshBrainList, save/load/delete handlers | localStorage |
 | Overlay | drawNet | renders ANY architecture from lastActs |
 | Theme | THEMES, applyTheme | self-contained --df-* vars, never host colors |
+| Touch input (v0.10) | applyTouchLayout, touchHud, tpadFire, canvas pointer handlers | thumb pad #tpad (pointer: coarse auto, df_touch pref), hold-to-walk, swipe/tap-to-step |
 
 ## 2. Data contracts - DO NOT BREAK
 
@@ -70,7 +71,8 @@ floor 0.08.
 ### localStorage keys
 `df_brains` {name:{brain,eps,episodes,bestDepth,cls}},
 `df_species` {rat|spider|skeleton:{brain,eps,steps,deaths,kills}},
-`df_theme` "dark"|"light". Note: chat-widget storage is sandboxed per
+`df_theme` "dark"|"light", `df_touch` "auto"|"on"|"off" (phone pad). Note:
+chat-widget storage is sandboxed per
 conversation; the hosted artifact and web/index.html get durable
 browser storage.
 
@@ -86,7 +88,12 @@ re-rolls baseSeed; AI respawn KEEPS it (reproducible curriculum).
    end). NEVER hand-retype the game. See git history commit messages
    for the per-version patch summaries.
 2. VERIFY with preview tools: launch config `delveforge` (python
-   http.server 8321, defined in D:\CodeLab\.claude\launch.json).
+   http.server 8321, defined in D:\CodeLab\.claude\launch.json; it had
+   gone missing and was re-added 2026-10-07 as
+   `python -m http.server 8321 --directory D:\CodeLab\DelveForge\web`).
+   Phone layout: resize the preview to the mobile preset (375x812); the
+   pad auto-shows when `(pointer: coarse)` matches, or force it with the
+   "Touch pad" button in the monster row.
    The preview tab is backgrounded: requestAnimationFrame stalls, so
    the game has a 250ms setInterval fallback that only fires when rAF
    is stalled (>400ms). Test by preview_eval driving the game
@@ -100,7 +107,8 @@ re-rolls baseSeed; AI respawn KEEPS it (reproducible curriculum).
    strip the doctype/html/head/body wrapper, keep the style block and
    everything between the body tags (a python transform, ~10 lines),
    then call the Artifact tool with the SAME file path to update the
-   SAME url.
+   SAME url. `python tools/artifact_fragment.py <out.html>` writes that
+   fragment (byte-identical to what was live at v0.9.1).
 4. SHIP: bump VERSION (SemVer), run `node tools/stamp.js` (rewrites the
    inline version-stamp block - the `.version-tag` footer line showing
    "v<ver> - updated <date time>"; Slotto v1.4.0 all-projects rule),
@@ -133,6 +141,13 @@ Artifact URL: https://claude.ai/code/artifact/d817b246-70f7-424b-80a3-423df7e0c5
 - PowerShell/bash on this box: long heredocs break; write patch
   scripts to files. Shell cwd resets between some calls - `cd` inside
   the same command, and never create files at D:\CodeLab root.
+- Touch (v0.10): the pad and the canvas carry `touch-action:none` and
+  take `setPointerCapture`. Without touch-action:none the browser claims
+  the gesture for scrolling, fires pointercancel, and swipes die. Hold-
+  to-walk is a timer that re-fires playerAct; it is stopped on pointerup,
+  pointercancel AND lostpointercapture - drop one and a lifted finger
+  keeps walking. Desktop mouse clicks on the canvas still only focus it
+  unless the touch pad is on (tap-to-step would break "click first").
 
 ## 5. Next phases - specs ready to execute
 
@@ -231,3 +246,4 @@ N3-findings fixes above - flag it to Justin before investing.
 - JS runtime: NeuroForge/web/neuroforge.js (game currently inlines an
   equivalent nf* copy; converge on the shared file during N3).
 - Hosted artifact: https://claude.ai/code/artifact/d817b246-70f7-424b-80a3-423df7e0c500
+  (same artifact, short link: https://claude.ai/artifact/Tgg5fiP964mzGhHCqKPFSF)
