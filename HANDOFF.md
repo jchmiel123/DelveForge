@@ -21,7 +21,8 @@ refers to functions in that file.
 | Brain roster | brainStore, refreshBrainList, save/load/delete handlers | localStorage |
 | Overlay | drawNet | renders ANY architecture from lastActs |
 | Theme | THEMES, applyTheme | self-contained --df-* vars, never host colors |
-| Touch input (v0.10) | applyTouchLayout, touchHud, tpadFire, canvas pointer handlers | thumb pad #tpad (pointer: coarse auto, df_touch pref), hold-to-walk, swipe/tap-to-step |
+| Touch input (v0.10-0.11) | applyTouchLayout, touchHud, tpadFire, gestDir/gestStep/cvUp | #tpad action bar (pointer: coarse auto, df_touch), optional d-pad (df_dpad), dungeon gestures: tap = step toward, hold = keep walking, swipe, two fingers = pinch zoom |
+| Camera + zoom (v0.11) | draw (ox/oy/vw/vh), fitCanvas, zoomNow/setZoom/zoomBy | zoomPx 0 = fit whole map (desktop default), else px/tile following the hero (phone default 28); camX/camY/camTs expose the last frame to the gesture code; minimap always in screen space |
 
 ## 2. Data contracts - DO NOT BREAK
 
@@ -71,7 +72,8 @@ floor 0.08.
 ### localStorage keys
 `df_brains` {name:{brain,eps,episodes,bestDepth,cls}},
 `df_species` {rat|spider|skeleton:{brain,eps,steps,deaths,kills}},
-`df_theme` "dark"|"light", `df_touch` "auto"|"on"|"off" (phone pad). Note:
+`df_theme` "dark"|"light", `df_touch` "auto"|"on"|"off" (phone UI), `df_dpad`
+"on"|"off" (visible d-pad), `df_zoom` "fit"|"<px per tile>". Note:
 chat-widget storage is sandboxed per
 conversation; the hosted artifact and web/index.html get durable
 browser storage.
@@ -148,6 +150,21 @@ Artifact URL: https://claude.ai/code/artifact/d817b246-70f7-424b-80a3-423df7e0c5
   pointercancel AND lostpointercapture - drop one and a lifted finger
   keeps walking. Desktop mouse clicks on the canvas still only focus it
   unless the touch pad is on (tap-to-step would break "click first").
+- Camera (v0.11): draw() translates the context by the camera offset, so
+  every world-space draw call stays untouched; only the minimap resets
+  the transform. Anything that maps a screen point to a tile MUST go
+  through camX/camY/camTs (set by the last frame) - never (px+0.5)*ts.
+- Pinch (v0.11): two pointers on the canvas = zoom, and the first finger's
+  pending tap/hold is cancelled the moment the second lands; otherwise a
+  pinch moves the hero (Justin's first phone report). Pinch and the Zoom
+  keys/buttons stay live in AI mode; only steps are gated by ai.mode.
+- Canvas height policy lives in fitCanvas, not draw: fit mode = map aspect
+  (as v0.9), zoom mode = fill the viewport minus the HUD/log/pad, capped
+  at 1.6x the width AND by screen.height so an auto-height iframe cannot
+  feed back into an ever-taller canvas.
+- The keydown handler ignores events whose target is an input, textarea or
+  select (typing a brain JSON into the box used to move the hero) and
+  never touches Ctrl/Cmd combos (browser zoom).
 
 ## 5. Next phases - specs ready to execute
 

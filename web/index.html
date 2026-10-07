@@ -17,15 +17,21 @@ body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0
 #df-root{touch-action:manipulation;}
 #cv{touch-action:none;}
 #tpad{display:none;position:sticky;bottom:0;z-index:5;margin:8px -10px 0;padding:8px 10px 10px;background:var(--df-bg);border-top:1px solid var(--df-border);align-items:center;justify-content:space-between;gap:10px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
-#tpad.ai-on{opacity:0.45;}
+#tpad.ai-on .dpad,#tpad.ai-on .tacts .tk:not(#tk-zoomout):not(#tk-zoomin):not(#tk-full):not(#tk-map){opacity:0.45;}
 .dpad{display:grid;grid-template-areas:". u ." "l c r" ". d .";grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:4px;}
 .tacts{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;flex:1;max-width:230px;}
-#df-root .tk{font-size:15px;min-height:56px;min-width:56px;padding:0 8px;border-radius:12px;touch-action:none;}
+#tpad.nodpad .dpad{display:none;}
+#tpad.nodpad .tacts{grid-template-columns:repeat(4,1fr);max-width:none;}
+#tpad:not(.nodpad) #tk-wait2{display:none;}
+#df-root .tk{font-size:15px;min-height:44px;min-width:44px;padding:0 6px;border-radius:12px;touch-action:none;}
+#df-root .dpad .tk{min-height:56px;min-width:56px;}
 #df-root .tk.held,#df-root .tk:active{background:var(--df-panel2);border-color:var(--df-accent);}
+#df-root:fullscreen{max-width:none;margin:0;padding:0 10px;box-sizing:border-box;overflow:auto;background:var(--df-bg);}
 @media (max-width:600px){
   body{margin:0.5rem auto;}
   #select{flex-direction:column;}
   #hud{gap:8px;font-size:13px;}
+  #h-seed{display:none;}
   #brainbox{transform:scale(0.66);transform-origin:top right;}
 }
 </style>
@@ -84,7 +90,7 @@ DF_ROOT.innerHTML=`
   <button id="btn-map">Map (M)</button>
   <span style="font-size:11.5px;color:var(--df-muted);margin-left:auto;">arrows/WASD - click the dungeon first</span>
 </div>
-<div id="tpad">
+<div id="tpad" class="nodpad">
   <div class="dpad">
     <button class="tk" data-tmv="0,-1" style="grid-area:u;" aria-label="Move up">&#9650;</button>
     <button class="tk" data-tmv="-1,0" style="grid-area:l;" aria-label="Move left">&#9664;</button>
@@ -97,6 +103,10 @@ DF_ROOT.innerHTML=`
     <button class="tk" id="tk-potion">Potion</button>
     <button class="tk" id="tk-scroll">Scroll</button>
     <button class="tk" id="tk-map">Map</button>
+    <button class="tk" id="tk-wait2" aria-label="Wait a turn">Wait</button>
+    <button class="tk" id="tk-zoomout" aria-label="Zoom out">Zoom -</button>
+    <button class="tk" id="tk-zoomin" aria-label="Zoom in">Zoom +</button>
+    <button class="tk" id="tk-full" style="display:none;">Full screen</button>
   </div>
 </div>
 <div id="airow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;padding:8px 10px;border:1px solid var(--df-border);border-radius:10px;background:var(--df-panel);">
@@ -131,6 +141,7 @@ DF_ROOT.innerHTML=`
   <button id="btn-mon-fresh">Forget everything</button>
   <button id="btn-theme">Theme: dark</button>
   <button id="btn-touch">Touch pad: auto</button>
+  <button id="btn-dpad">D-pad: off</button>
 </div>
 <div class="version-tag" style="margin:8px 2px 0;font-size:11px;color:var(--df-muted);"></div>`;
 const TW=40,TH=26,WALL=0,FLOOR=1,STAIRS=3,CHEST=5,CHESTO=6;
@@ -1011,7 +1022,6 @@ function startGame(i){
   msgs=[];floaters=[];shots=[];
   document.getElementById("select").style.display="none";
   document.getElementById("stage").style.display="";
-  applyTouchLayout();
   document.getElementById("hud").style.display="flex";
   document.getElementById("log").style.display="";
   document.getElementById("invrow").style.display="flex";
@@ -1019,8 +1029,9 @@ function startGame(i){
   document.getElementById("monrow").style.display="flex";
   document.getElementById("iorow").style.display="none";
   document.getElementById("dead").style.display="none";
+  applyTouchLayout();
   pushMsg("You enter the abandoned manor. Find the stairs down.");
-  if(touchWanted())pushMsg("Swipe or tap the dungeon to step. Hold a pad arrow to keep walking.");
+  if(touchWanted())pushMsg("Tap the dungeon to step that way, hold to keep walking, pinch or Zoom to see more. Map shows the whole level.");
   genLevel();updateHud();cv.focus();refreshBrainList();monInfo();
 }
 document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";
@@ -1044,6 +1055,12 @@ document.getElementById("btn-potion").onclick=()=>{if(ai.mode==="off")drinkPotio
 document.getElementById("btn-wait").onclick=()=>{if(state==="play"&&ai.mode==="off")endTurn();};
 document.getElementById("btn-map").onclick=()=>showMap=!showMap;
 document.addEventListener("keydown",e=>{
+  const tg=e.target&&e.target.tagName;
+  if(tg==="TEXTAREA"||tg==="INPUT"||tg==="SELECT")return;
+  if(e.ctrlKey||e.metaKey||e.altKey||state==="select")return;
+  if(e.key==="+"||e.key==="="){e.preventDefault();zoomBy(1.25);return;}
+  if(e.key==="-"||e.key==="_"){e.preventDefault();zoomBy(0.8);return;}
+  if(e.key==="0"){e.preventDefault();setZoom(0);return;}
   if(state!=="play"||ai.mode!=="off")return;
   const k=e.key.toLowerCase();
   const map={arrowup:[0,-1],w:[0,-1],arrowdown:[0,1],s:[0,1],arrowleft:[-1,0],a:[-1,0],arrowright:[1,0],d:[1,0]};
@@ -1054,18 +1071,49 @@ document.addEventListener("keydown",e=>{
   else if(k==="e"){e.preventDefault();readScroll();}
   else if(k==="m"){showMap=!showMap;}
 });
-/* ---- phone controls (v0.10): thumb pad, hold-to-walk, swipe/tap on the dungeon ---- */
+/* ---- phone controls (v0.11): touch layout, thumb pad, dungeon gestures (tap/hold/swipe/pinch), follow camera + zoom, full screen ---- */
 const TOUCH_Q=window.matchMedia?window.matchMedia("(pointer: coarse)"):null;
-let touchPref="auto";
-try{touchPref=localStorage.getItem("df_touch")||"auto";}catch(e){}
+let touchPref="auto",dpadPref="off";
+try{touchPref=localStorage.getItem("df_touch")||"auto";dpadPref=localStorage.getItem("df_dpad")||"off";}catch(e){}
 if(touchPref!=="on"&&touchPref!=="off")touchPref="auto";
+if(dpadPref!=="on")dpadPref="off";
 function touchWanted(){return touchPref==="on"||(touchPref==="auto"&&!!(TOUCH_Q&&TOUCH_Q.matches));}
+const ZMIN=10,ZMAX=56;
+let zoomPx=-1;
+try{const z=localStorage.getItem("df_zoom");if(z==="fit")zoomPx=0;else if(z&&+z>0)zoomPx=Math.max(ZMIN,Math.min(ZMAX,Math.round(+z)));}catch(e){}
+function zoomNow(){if(zoomPx<0)zoomPx=touchWanted()?28:0;return zoomPx;}
+function setZoom(z){
+  zoomPx=z>0?Math.max(ZMIN,Math.min(ZMAX,Math.round(z))):0;
+  try{localStorage.setItem("df_zoom",zoomPx?String(zoomPx):"fit");}catch(e){}
+  fitCanvas();
+}
+function zoomBy(f){const w=cv.getBoundingClientRect().width||720;setZoom((zoomNow()||w/TW)*f);}
+let lastW=0,camX=0,camY=0,camTs=1;
+function fitCanvas(){
+  const w=cv.getBoundingClientRect().width;
+  if(w<10)return;
+  lastW=w;
+  let h=Math.round(w*TH/TW);
+  if(zoomNow()>0){
+    let used=56;
+    for(const id of ["hud","log","invrow","pad","tpad"]){const el=document.getElementById(id);if(el&&el.offsetParent!==null)used+=el.offsetHeight;}
+    const vh=Math.min(window.innerHeight||9999,(window.screen&&screen.height)||9999);
+    h=Math.max(220,Math.min(Math.round(w*1.6),Math.round(vh-used)));
+  }
+  if(cv.style.height!==h+"px")cv.style.height=h+"px";
+}
+window.addEventListener("resize",fitCanvas);
 function applyTouchLayout(){
   const inGame=state!=="select",on=inGame&&touchWanted();
-  document.getElementById("tpad").style.display=on?"flex":"none";
+  const tp=document.getElementById("tpad");
+  tp.style.display=on?"flex":"none";
+  tp.classList.toggle("nodpad",dpadPref!=="on");
   document.getElementById("pad").style.display=inGame&&!on?"flex":"none";
+  document.getElementById("invrow").style.display=inGame&&!on?"flex":"none";
   document.getElementById("btn-touch").textContent="Touch pad: "+touchPref;
-  touchHud();
+  document.getElementById("btn-dpad").textContent="D-pad: "+dpadPref;
+  document.getElementById("tk-full").style.display=(document.fullscreenEnabled&&DF_ROOT.requestFullscreen)?"":"none";
+  touchHud();fitCanvas();
 }
 function touchHud(){
   if(!cls)return;
@@ -1076,6 +1124,7 @@ function touchHud(){
   document.getElementById("tk-ability").textContent=lbl;
   document.getElementById("tk-potion").textContent="Potion"+(inv.potion>0?" x"+inv.potion:"");
   document.getElementById("tk-scroll").textContent="Scroll"+(inv.scroll>0?" x"+inv.scroll:"");
+  document.getElementById("tk-full").textContent=document.fullscreenElement?"Exit full":"Full screen";
   document.getElementById("tpad").classList.toggle("ai-on",ai.mode!=="off");
 }
 const HOLD_DELAY=320,HOLD_REPEAT=140;
@@ -1107,44 +1156,107 @@ document.querySelectorAll("#tpad .dpad .tk").forEach(b=>{
 document.getElementById("tk-ability").onclick=()=>{if(ai.mode==="off")ability();};
 document.getElementById("tk-potion").onclick=()=>{if(ai.mode==="off")drinkPotion();};
 document.getElementById("tk-scroll").onclick=()=>{if(ai.mode==="off")readScroll();};
+document.getElementById("tk-wait2").onclick=()=>{if(state==="play"&&ai.mode==="off")endTurn();};
 document.getElementById("tk-map").onclick=()=>{showMap=!showMap;};
+document.getElementById("tk-zoomin").onclick=()=>zoomBy(1.25);
+document.getElementById("tk-zoomout").onclick=()=>zoomBy(0.8);
+document.getElementById("tk-full").onclick=()=>{
+  if(document.fullscreenElement){if(document.exitFullscreen)document.exitFullscreen();}
+  else if(DF_ROOT.requestFullscreen){const p=DF_ROOT.requestFullscreen();if(p&&p.catch)p.catch(()=>{});}
+};
+document.addEventListener("fullscreenchange",()=>{touchHud();fitCanvas();});
 document.getElementById("btn-touch").onclick=()=>{
   touchPref=touchPref==="auto"?"on":touchPref==="on"?"off":"auto";
   try{localStorage.setItem("df_touch",touchPref);}catch(e){}
   applyTouchLayout();
 };
+document.getElementById("btn-dpad").onclick=()=>{
+  dpadPref=dpadPref==="on"?"off":"on";
+  try{localStorage.setItem("df_dpad",dpadPref);}catch(e){}
+  applyTouchLayout();
+};
 if(TOUCH_Q&&TOUCH_Q.addEventListener)TOUCH_Q.addEventListener("change",applyTouchLayout);
-let swipe=null;
+/* dungeon gestures: one finger = tap to step toward it / hold to keep walking / swipe; two fingers = pinch zoom */
+const ptrs=new Map();
+let gest=null,pinch=null;
+function gestDir(clientX,clientY){
+  const r=cv.getBoundingClientRect();
+  const tx=camX+(clientX-r.left)/camTs-(px+0.5),ty=camY+(clientY-r.top)/camTs-(py+0.5);
+  if(Math.abs(tx)<0.5&&Math.abs(ty)<0.5)return [0,0];
+  return Math.abs(tx)>=Math.abs(ty)?[tx>0?1:-1,0]:[0,ty>0?1:-1];
+}
+function gestStep(d){
+  if(state!=="play"||ai.mode!=="off")return;
+  if(d[0]===0&&d[1]===0)endTurn();else playerAct(d[0],d[1]);
+}
+function gestStop(){if(gest&&gest.timer)clearTimeout(gest.timer);gest=null;}
 cv.addEventListener("pointerdown",e=>{
   if(e.pointerType==="mouse"&&e.button!==0)return;
-  swipe={x:e.clientX,y:e.clientY,id:e.pointerId};
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   try{cv.setPointerCapture(e.pointerId);}catch(err){}
-});
-cv.addEventListener("pointerup",e=>{
-  const s=swipe;swipe=null;
-  if(!s||e.pointerId!==s.id)return;
-  if(state!=="play"||ai.mode!=="off")return;
-  if(e.pointerType==="mouse"&&!touchWanted())return;
-  const dx=e.clientX-s.x,dy=e.clientY-s.y,ax=Math.abs(dx),ay=Math.abs(dy);
-  if(Math.max(ax,ay)>=18){
-    if(ax>=ay)playerAct(dx>0?1:-1,0);else playerAct(0,dy>0?1:-1);
+  if(ptrs.size===2){
+    gestStop();
+    const pp=[...ptrs.values()];
+    pinch={d0:Math.hypot(pp[0].x-pp[1].x,pp[0].y-pp[1].y)||1,z0:zoomNow()||cv.getBoundingClientRect().width/TW};
     return;
   }
-  const r=cv.getBoundingClientRect(),ts=r.width/TW;
-  const tx=(e.clientX-r.left)/ts-(px+0.5),ty=(e.clientY-r.top)/ts-(py+0.5);
-  if(Math.abs(tx)<0.5&&Math.abs(ty)<0.5){endTurn();return;}
-  if(Math.abs(tx)>=Math.abs(ty))playerAct(tx>0?1:-1,0);else playerAct(0,ty>0?1:-1);
+  if(ptrs.size>2){gestStop();return;}
+  if(e.pointerType==="mouse"&&!touchWanted())return;
+  const g={id:e.pointerId,x:e.clientX,y:e.clientY,dir:gestDir(e.clientX,e.clientY),moved:false,held:false,timer:null};
+  gest=g;
+  const rep=()=>{if(gest!==g)return;g.held=true;gestStep(g.dir);g.timer=setTimeout(rep,HOLD_REPEAT);};
+  g.timer=setTimeout(rep,HOLD_DELAY);
 });
-cv.addEventListener("pointercancel",()=>{swipe=null;});
+cv.addEventListener("pointermove",e=>{
+  const p=ptrs.get(e.pointerId);
+  if(!p)return;
+  p.x=e.clientX;p.y=e.clientY;
+  if(pinch&&ptrs.size>=2){
+    const pp=[...ptrs.values()];
+    const d=Math.hypot(pp[0].x-pp[1].x,pp[0].y-pp[1].y);
+    const z=Math.max(ZMIN,Math.min(ZMAX,Math.round(pinch.z0*d/pinch.d0)));
+    if(z!==zoomPx){zoomPx=z;fitCanvas();}
+    return;
+  }
+  if(gest&&gest.id===e.pointerId&&!gest.held&&!gest.moved&&Math.hypot(e.clientX-gest.x,e.clientY-gest.y)>=18){
+    gest.moved=true;
+    if(gest.timer){clearTimeout(gest.timer);gest.timer=null;}
+  }
+});
+function cvUp(e){
+  ptrs.delete(e.pointerId);
+  if(pinch){
+    if(ptrs.size<2){pinch=null;try{localStorage.setItem("df_zoom",String(zoomPx));}catch(err){}}
+    return;
+  }
+  if(!gest||gest.id!==e.pointerId)return;
+  const g=gest;gestStop();
+  if(e.type!=="pointerup"||g.held)return;
+  const dx=e.clientX-g.x,dy=e.clientY-g.y;
+  if(Math.max(Math.abs(dx),Math.abs(dy))>=18){gestStep(Math.abs(dx)>=Math.abs(dy)?[dx>0?1:-1,0]:[0,dy>0?1:-1]);return;}
+  gestStep(g.dir);
+}
+cv.addEventListener("pointerup",cvUp);
+cv.addEventListener("pointercancel",cvUp);
 function draw(t){
-  const w=cv.getBoundingClientRect().width,h=Math.round(w*TH/TW);
-  if(w<10)return;
-  if(cv.width!==Math.round(w*DPR)){cv.width=Math.round(w*DPR);cv.height=Math.round(h*DPR);cv.style.height=h+"px";}
+  let rect=cv.getBoundingClientRect();
+  if(rect.width<10)return;
+  if(Math.abs(rect.width-lastW)>0.5||!cv.style.height){fitCanvas();rect=cv.getBoundingClientRect();}
+  const w=rect.width,h=rect.height;
+  if(cv.width!==Math.round(w*DPR)||cv.height!==Math.round(h*DPR)){cv.width=Math.round(w*DPR);cv.height=Math.round(h*DPR);}
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.fillStyle="#111118";ctx.fillRect(0,0,w,h);
   if(state==="select")return;
-  const ts=w/TW,flick=0.85+0.15*Math.sin(t/120+Math.sin(t/77));
-  for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
+  const ts=zoomNow()||w/TW,flick=0.85+0.15*Math.sin(t/120+Math.sin(t/77));
+  vx+=(px-vx)*0.4;vy+=(py-vy)*0.4;
+  const vw=w/ts,vh=h/ts;
+  let ox=vx+0.5-vw/2,oy=vy+0.5-vh/2;
+  ox=vw>=TW?(TW-vw)/2:Math.max(0,Math.min(TW-vw,ox));
+  oy=vh>=TH?(TH-vh)/2:Math.max(0,Math.min(TH-vh,oy));
+  camX=ox;camY=oy;camTs=ts;
+  ctx.translate(-ox*ts,-oy*ts);
+  const cx0=Math.max(0,Math.floor(ox)),cx1=Math.min(TW-1,Math.ceil(ox+vw)),cy0=Math.max(0,Math.floor(oy)),cy1=Math.min(TH-1,Math.ceil(oy+vh));
+  for(let y=cy0;y<=cy1;y++)for(let x=cx0;x<=cx1;x++){
     const id=idx(x,y),vis=visCache.has(id),exp=explored[id];
     if(!vis&&!exp)continue;
     const g=grid[id],X=x*ts,Y=y*ts;
@@ -1247,7 +1359,6 @@ function draw(t){
     ctx.fillStyle="#f5e6d0";ctx.beginPath();ctx.arc(RX+rival.fx*ts*0.15,RY+rival.fy*ts*0.15,ts*0.09,0,7);ctx.fill();
     ctx.strokeStyle="#ffffff";ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(RX,RY,ts*0.4,0,7);ctx.stroke();
   }
-  vx+=(px-vx)*0.4;vy+=(py-vy)*0.4;
   const PX=vx*ts+ts/2,PY=vy*ts+ts/2;
   ctx.fillStyle="rgba(240,180,80,"+(0.06*flick).toFixed(3)+")";
   ctx.beginPath();ctx.arc(PX,PY,lightR()*ts,0,7);ctx.fill();
@@ -1268,22 +1379,24 @@ function draw(t){
     f.age+=0.03;
     if(f.age>1)continue;
     ctx.fillStyle=f.c;ctx.globalAlpha=1-f.age;
-    ctx.font="500 12px sans-serif";ctx.textAlign="center";
+    ctx.font="500 "+Math.max(12,Math.round(ts*0.55))+"px sans-serif";ctx.textAlign="center";
     ctx.fillText(f.txt,f.x*ts+ts/2,f.y*ts-f.age*14+ts*0.2);
     ctx.globalAlpha=1;
   }
   floaters=floaters.filter(f=>f.age<=1);
   if(showMap){
-    const mw=TW*3,mh=TH*3,MX=w-mw-10,MY=10;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    const ms=w>=480?4:3,mw=TW*ms,mh=TH*ms,MX=w-mw-10,MY=10;
     ctx.fillStyle="rgba(10,10,16,0.85)";ctx.fillRect(MX-4,MY-4,mw+8,mh+8);
     for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
       const id=idx(x,y);
       if(!explored[id])continue;
       const g=grid[id];
       ctx.fillStyle=g===WALL?"#333":g===STAIRS?"#EF9F27":"#6a6a7a";
-      ctx.fillRect(MX+x*3,MY+y*3,3,3);
+      ctx.fillRect(MX+x*ms,MY+y*ms,ms,ms);
     }
-    ctx.fillStyle=cls.color;ctx.fillRect(MX+px*3-1,MY+py*3-1,5,5);
+    ctx.fillStyle=cls.color;ctx.fillRect(MX+px*ms-1,MY+py*ms-1,ms+2,ms+2);
+    if(vw<TW||vh<TH){ctx.strokeStyle="rgba(255,255,255,0.45)";ctx.lineWidth=1;ctx.strokeRect(MX+ox*ms,MY+oy*ms,Math.min(vw,TW)*ms,Math.min(vh,TH)*ms);}
   }
 }
 const ncv=document.getElementById("netcv"),ntx=ncv.getContext("2d");
@@ -1355,7 +1468,7 @@ setInterval(()=>{
 <script id="version-stamp">
 /* GENERATED by tools/stamp.js - do not edit by hand (single-file game;
    the version block lives inline so the hosted artifact keeps it too). */
-window.DELVEFORGE_VERSION = { version: "0.10.0", built: "2026-10-07 13:59" };
+window.DELVEFORGE_VERSION = { version: "0.11.0", built: "2026-10-07 14:21" };
 (function () {
   var text = "v" + DELVEFORGE_VERSION.version + " - updated " + DELVEFORGE_VERSION.built;
   var els = document.querySelectorAll(".version-tag");

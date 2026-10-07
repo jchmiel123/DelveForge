@@ -12,8 +12,10 @@ Open `web/index.html` in any browser. No build step, no dependencies.
 
 - Pick a class (Warrior / Ranger / Mage - different sight and light).
 - Arrows or WASD to move (click the game first), Space to wait, M for map.
-- On a phone a thumb pad appears under the dungeon: swipe or tap the
-  dungeon to step, hold a pad arrow to keep walking.
+- On a phone the camera follows you: tap the dungeon to step that way,
+  hold to keep walking, tap your hero to wait, pinch (or Zoom -/+) to
+  zoom, Map for the whole level. An optional visible d-pad is one toggle
+  away. On desktop, + / - / 0 zoom in, out and back to the whole map.
 - Bump monsters to fight, bump chests to loot, find the stairs, descend.
 - You see only what your facing cone AND your light allow. The dark is real.
 
