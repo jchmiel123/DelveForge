@@ -276,6 +276,21 @@ user-select:none on the game UI (textarea/input keep selection).
 Hosting rule: GitHub Pages serves web/ straight from master, so every push
 of master IS a deploy; keep the artifact redeploy for the claude.ai link.
 
+v0.13.1 (same day, from a reviewer-agent pass; ReviewForge found nothing,
+as calibrated): resumeRun kept a saved facing of 0 as 0 (`||1` had turned
+"facing up" into a diagonal cone = perception leak); genLevel never spawned
+two monsters on one tile (a hidden second monster attacked unseen); every
+genLevel marks the run dirty (a descent used to lag the autosave by one
+step); brains with more inputs than SENSN are zero-padded via fitIn()
+instead of feeding undefined (NaN Q-values, then NaN weights on train) and
+Import warns; saved/imported brain names skip taken "#n" suffixes after a
+delete; dodge caps at 60% and crit at 75% (leveled cape+boots+rare could
+pass 100%); DPR is re-read every frame (browser zoom / monitor moves);
+the canvas gestures also stop on lostpointercapture; minimap view rect
+clamps at 0. Not changed: the sheets are position:fixed and #gear-detail
+is sticky-bottom, which assumes the hosting iframe is viewport-sized (true
+for the artifact panel and Pages); revisit if a host auto-sizes the frame.
+
 ### N5. Gear + inventory - DONE in v0.12.0 (2026-10-07, Justin's spec from the phone)
 Justin: "a full inventory screen - head, shoulders, cape, chest, bracers,
 gauntlets, a ring on each hand, legs, boots"; keep the "don't have to swap

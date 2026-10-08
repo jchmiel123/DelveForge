@@ -262,7 +262,7 @@ function gearLvlText(it){return it.rarity===0?"Common gear does not grow.":it.lv
 function gearSum(stat){let t=0;for(const s of SLOTS){const it=gear[s];if(it){const v=itemStats(it)[stat];if(v)t+=v;}}return t;}
 function gearAtk(){return gear.weapon?(itemStats(gear.weapon).atk||0):0;}
 function goldAdj(g){const f=gearSum("goldFind");return f>0?Math.round(g*(1+f/100)):g;}
-function strikeDmg(){let d=atk()+(R()<0.3?1:0);const c=gearSum("crit");if(c>0&&R()<c/100){d+=Math.max(1,Math.ceil(atk()/2));floatTxt(px,py,"crit!","#FAC775");}return d;}
+function strikeDmg(){let d=atk()+(R()<0.3?1:0);const c=Math.min(75,gearSum("crit"));if(c>0&&R()<c/100){d+=Math.max(1,Math.ceil(atk()/2));floatTxt(px,py,"crit!","#FAC775");}return d;}
 function regenTick(){const r=gearSum("regen");if(r>0&&hp>0&&hp<maxHp()&&turnCount%Math.max(2,7-r)===0){hp++;floatTxt(px,py,"+1","#9FE1CB");}}
 function gearXp(){
   for(const s of SLOTS){
@@ -344,7 +344,7 @@ function genLevel(){
   for(let m=0;m<nMon;m++){
     const r=rooms[1+ri(rooms.length-1)];
     const mx=r.x+ri(r.w),my=r.y+ri(r.h);
-    if(grid[idx(mx,my)]!==FLOOR)continue;
+    if(grid[idx(mx,my)]!==FLOOR||monsterAt(mx,my)||(mx===px&&my===py))continue;
     const roll2=R();
     let kind="rat";
     if(depth>=2&&roll2<0.4)kind="skeleton";
@@ -358,6 +358,7 @@ function genLevel(){
   }
   placeRival();
   computeVis();
+  runDirty=true;
 }
 function los(x0,y0,x1,y1){
   let dx=Math.abs(x1-x0),dy=Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1,err=dx-dy,x=x0,y=y0;
@@ -568,7 +569,7 @@ function attackDelver(m,who){
     if(rival.hp<=0){rival.dead=true;pushMsg("Your rival has fallen! Their gold is lost to the dark.");}
     return dmg;
   }
-  const dg=gearSum("dodge");
+  const dg=Math.min(60,gearSum("dodge"));
   if(dg>0&&R()<dg/100){floatTxt(px,py,"dodge","#9FE1CB");pushMsg("You dodge the "+mname(m)+".");return 0;}
   const dmg=Math.max(1,m.atk-defTotal()+(R()<0.3?1:0));
   hp-=dmg;if(evt)evt.dmg+=dmg;
@@ -713,7 +714,7 @@ function placeRival(){
 function rivalTick(){
   if(!rival||rival.dead)return;
   const vis=rivalVis();
-  const s=rivalSensor(vis).slice(0,brainIn(rival.brain));
+  const s=fitIn(rivalSensor(vis),brainIn(rival.brain));
   const q=nfForward(rival.brain,s);
   let a=0;for(let i=1;i<Math.min(4,q.length);i++)if(q[i]>q[a])a=i;
   const dd=[[0,-1],[0,1],[-1,0],[1,0]][a];
@@ -865,6 +866,7 @@ function sensor(){
   return v;
 }
 function brainIn(b){return b[0].w[0].length;}
+function fitIn(v,n){const s=v.slice(0,n);while(s.length<n)s.push(0);return s;}
 function brainOut(b){return b[b.length-1].b.length;}
 function aiEnsureBrain(){
   if(!ai.brain){ai.brain=nfRandom([SENSN,32,16,ACTN]);ai.target=nfCopy(ai.brain);ai.eps=1.0;ai.name="fresh rookie (Mk II)";}
@@ -917,7 +919,7 @@ function aiTick(){
   if(state!=="play")return;
   aiEnsureBrain();
   const nIn=brainIn(ai.brain),nOut=brainOut(ai.brain);
-  const sFull=sensor(),s0=sFull.slice(0,nIn);
+  const sFull=sensor(),s0=fitIn(sFull,nIn);
   const explore=ai.mode==="training"&&Math.random()<ai.eps;
   const learning=ai.mode==="training"||ai.mode==="playing";
   const allActs=nfForwardAll(ai.brain,s0);
@@ -939,7 +941,7 @@ function aiTick(){
   if(evt.died)r-=10;
   const done=evt.died;
   if(learning){
-    const s1=done?null:sensor().slice(0,nIn);
+    const s1=done?null:fitIn(sensor(),nIn);
     ai.buffer.push([s0,a,r,s1,done]);
     if(ai.buffer.length>4000)ai.buffer.shift();
     if(ai.buffer.length>=12){
@@ -1000,7 +1002,9 @@ function refreshBrainList(){
 document.getElementById("btn-save-brain").onclick=()=>{
   if(!ai.brain){pushMsg("No brain to save yet - turn the AI on first.");return;}
   const store=brainStore();
-  const name=cls.name+" d"+(ai.bestDepth+1)+" life"+(ai.episodes+1)+" #"+(Object.keys(store).length+1);
+  const nbase=cls.name+" d"+(ai.bestDepth+1)+" life"+(ai.episodes+1);
+  let nn=Object.keys(store).length+1;while((nbase+" #"+nn) in store)nn++;
+  const name=nbase+" #"+nn;
   store[name]={brain:ai.brain,eps:ai.eps,episodes:ai.episodes,bestDepth:ai.bestDepth,cls:cls.name};
   try{localStorage.setItem("df_brains",JSON.stringify(store));pushMsg('Brain saved as "'+name+'".');}catch(e){pushMsg("Could not save (storage unavailable).");}
   refreshBrainList();
@@ -1078,7 +1082,10 @@ document.getElementById("btn-import").onclick=()=>{
   catch(e){pushMsg("Import failed: "+e.message);return;}
   const nIn=brain[0].w[0].length,nOut=brain[brain.length-1].b.length;
   const store=brainStore();
-  const nm=(meta.cls?meta.cls:"imported")+" (imported) #"+(Object.keys(store).length+1);
+  const nbase=(meta.cls?meta.cls:"imported")+" (imported)";
+  let nn=Object.keys(store).length+1;while((nbase+" #"+nn) in store)nn++;
+  const nm=nbase+" #"+nn;
+  if(nIn>SENSN)pushMsg("That brain expects "+nIn+" senses and this game has "+SENSN+"; the extra inputs will read as 0.");
   store[nm]={brain:brain,eps:0.05,episodes:meta.episodes||0,bestDepth:meta.bestDepth||0,cls:meta.cls||"Ranger"};
   try{localStorage.setItem("df_brains",JSON.stringify(store));}catch(e){}
   ai.brain=brain;ai.target=nfCopy(brain);ai.eps=0.05;ai.name=nm;ai.buffer=[];
@@ -1133,7 +1140,8 @@ document.getElementById("btn-mon-fresh").onclick=()=>{
   pushMsg("The dungeon's creatures forget everything they knew.");
   monInfo();
 };
-const cv=document.getElementById("cv"),ctx=cv.getContext("2d"),DPR=window.devicePixelRatio||1;
+const cv=document.getElementById("cv"),ctx=cv.getContext("2d");
+let DPR=window.devicePixelRatio||1;
 function drawPortrait(c,cl){
   const x=c.getContext("2d"),w=c.width,h=c.height;
   x.fillStyle="#1a1a22";x.fillRect(0,0,w,h);
@@ -1214,7 +1222,7 @@ function showGameUi(){
 function resumeRun(d){
   cls=CLASSES[d.cls];baseSeed=d.seed;depth=d.depth;
   rng=mulberry32(baseSeed+depth*7919+(d.turnCount||0)*31);
-  px=d.px;py=d.py;fx=d.fx||1;fy=d.fy||0;vx=px;vy=py;hp=d.hp;gold=d.gold||0;level=d.level||1;xp=d.xp||0;
+  px=d.px;py=d.py;fx=typeof d.fx==="number"?d.fx:1;fy=typeof d.fy==="number"?d.fy:0;if(!fx&&!fy)fx=1;vx=px;vy=py;hp=d.hp;gold=d.gold||0;level=d.level||1;xp=d.xp||0;
   inv=d.inv||{potion:0,scroll:0};arrows=d.arrows||0;mana=d.mana||0;cd=d.cd||0;lightTimer=d.lightTimer||0;poisonTimer=d.poisonTimer||0;turnCount=d.turnCount||0;
   gear=Object.assign(emptyGear(),d.gear||{});bag=d.bag||[];newGear=d.newGear||0;gearUid=Math.max(gearUid,d.gearUid||0);gearSel=null;
   grid=Uint8Array.from(d.grid);explored=Uint8Array.from(d.explored||[]);
@@ -1351,8 +1359,8 @@ function toggleGear(open){
 function renderGear(){
   if(!gearOpen||!cls)return;
   const extras=[];
-  if(gearSum("dodge"))extras.push("dodge "+gearSum("dodge")+"%");
-  if(gearSum("crit"))extras.push("crit "+gearSum("crit")+"%");
+  if(gearSum("dodge"))extras.push("dodge "+Math.min(60,gearSum("dodge"))+"%"+(gearSum("dodge")>60?" (max)":""));
+  if(gearSum("crit"))extras.push("crit "+Math.min(75,gearSum("crit"))+"%"+(gearSum("crit")>75?" (max)":""));
   if(gearSum("regen"))extras.push("regen");
   if(gearSum("goldFind"))extras.push("gold +"+gearSum("goldFind")+"%");
   if(gearSum("poisonRes"))extras.push("venom resist");
@@ -1530,7 +1538,9 @@ function cvUp(e){
 }
 cv.addEventListener("pointerup",cvUp);
 cv.addEventListener("pointercancel",cvUp);
+cv.addEventListener("lostpointercapture",cvUp);
 function draw(t){
+  DPR=window.devicePixelRatio||1;
   let rect=cv.getBoundingClientRect();
   if(rect.width<10)return;
   if(Math.abs(rect.width-lastW)>0.5||!cv.style.height){fitCanvas();rect=cv.getBoundingClientRect();}
@@ -1704,14 +1714,14 @@ function draw(t){
       ctx.fillRect(MX+x*ms,MY+y*ms,ms,ms);
     }
     ctx.fillStyle=cls.color;ctx.fillRect(MX+px*ms-1,MY+py*ms-1,ms+2,ms+2);
-    if(vw<TW||vh<TH){ctx.strokeStyle="rgba(255,255,255,0.45)";ctx.lineWidth=1;ctx.strokeRect(MX+ox*ms,MY+oy*ms,Math.min(vw,TW)*ms,Math.min(vh,TH)*ms);}
+    if(vw<TW||vh<TH){ctx.strokeStyle="rgba(255,255,255,0.45)";ctx.lineWidth=1;ctx.strokeRect(MX+Math.max(0,ox)*ms,MY+Math.max(0,oy)*ms,Math.min(vw,TW)*ms,Math.min(vh,TH)*ms);}
   }
 }
 const ncv=document.getElementById("netcv"),ntx=ncv.getContext("2d");
 function drawNet(){
   if(!brainView||state!=="play")return;
   if(!ai.brain){aiEnsureBrain();}
-  if(!lastActs||ai.mode==="off")lastActs=nfForwardAll(ai.brain,sensor().slice(0,brainIn(ai.brain)));
+  if(!lastActs||ai.mode==="off")lastActs=nfForwardAll(ai.brain,fitIn(sensor(),brainIn(ai.brain)));
   const w=290,h=180;
   if(ncv.width!==Math.round(w*DPR)){ncv.width=Math.round(w*DPR);ncv.height=Math.round(h*DPR);}
   ntx.setTransform(DPR,0,0,DPR,0,0);ntx.clearRect(0,0,w,h);
@@ -1776,7 +1786,7 @@ setInterval(()=>{
 <script id="version-stamp">
 /* GENERATED by tools/stamp.js - do not edit by hand (single-file game;
    the version block lives inline so the hosted artifact keeps it too). */
-window.DELVEFORGE_VERSION = { version: "0.13.0", built: "2026-10-07 20:27" };
+window.DELVEFORGE_VERSION = { version: "0.13.1", built: "2026-10-07 21:34" };
 (function () {
   var text = "v" + DELVEFORGE_VERSION.version + " - updated " + DELVEFORGE_VERSION.built;
   var els = document.querySelectorAll(".version-tag");
