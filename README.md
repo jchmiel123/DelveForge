@@ -8,7 +8,13 @@ it learn.
 
 ## Play it
 
-Open `web/index.html` in any browser. No build step, no dependencies.
+Online: https://jchmiel123.github.io/DelveForge/ (served straight from this
+repo by GitHub Pages). On a phone, open it in the browser and use "Add to
+Home screen" - it installs as a full-screen app with its own icon. Or open
+`web/index.html` from a clone in any browser. No build step, no dependencies.
+
+Your current delve autosaves as you play; the class screen offers
+"Continue your delve" after a reload. Death clears it (it is a roguelike).
 
 - Pick a class (Warrior / Ranger / Mage - different sight and light).
 - Arrows or WASD to move (click the game first), Space to wait, M for map.

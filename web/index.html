@@ -2,7 +2,14 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14141b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>DelveForge</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0 10px;background:var(--df-bg,#14141b);color:var(--df-text,#e8e4d8);}
@@ -14,9 +21,11 @@ body{font-family:system-ui,sans-serif;max-width:720px;margin:1rem auto;padding:0
 #df-root input[type=range]{accent-color:var(--df-accent);}
 .card{border:1px solid var(--df-border);border-radius:12px;padding:12px;cursor:pointer;text-align:center;flex:1;background:var(--df-panel);}
 .card:hover{border-color:var(--df-accent);}
-#df-root{touch-action:manipulation;}
+#df-root{touch-action:manipulation;-webkit-user-select:none;user-select:none;}
+#df-root textarea,#df-root input{-webkit-user-select:text;user-select:text;}
+.card.cont{flex-basis:100%;text-align:left;display:flex;align-items:center;gap:12px;border-color:var(--df-accent);}
 #cv{touch-action:none;}
-#tpad{display:none;position:sticky;bottom:0;z-index:5;margin:8px -10px 0;padding:8px 10px 10px;background:var(--df-bg);border-top:1px solid var(--df-border);align-items:center;justify-content:space-between;gap:10px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+#tpad{display:none;position:sticky;bottom:0;z-index:5;margin:8px -10px 0;padding:8px 10px calc(10px + env(safe-area-inset-bottom,0px));background:var(--df-bg);border-top:1px solid var(--df-border);align-items:center;justify-content:space-between;gap:10px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
 #tpad.ai-on .dpad,#tpad.ai-on .tacts .tk:not(#tk-zoomout):not(#tk-zoomin):not(#tk-gear):not(#tk-map){opacity:0.45;}
 .sheet{position:fixed;inset:0;z-index:20;background:var(--df-bg);color:var(--df-text);overflow:auto;padding:10px 12px 20px;box-sizing:border-box;-webkit-overflow-scrolling:touch;}
 .sheet-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;position:sticky;top:0;z-index:2;background:var(--df-bg);padding:4px 0;}
@@ -71,7 +80,7 @@ function applyTheme(){
 DF_ROOT.innerHTML=`
 <div id="hud" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 6px;font-size:14px;">
   <span id="h-class" style="font-weight:500;"></span>
-  <span id="h-hp"></span>
+  <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:72px;height:8px;border-radius:4px;background:var(--df-panel2);overflow:hidden;display:inline-block;"><span id="h-hpfill" style="display:block;height:100%;width:100%;background:#1D9E75;transition:width 0.15s;"></span></span><span id="h-hp"></span></span>
   <span id="h-stats" style="font-size:13px;color:var(--df-muted);"></span>
   <span id="h-gold" style="color:var(--df-accent);"></span>
   <span id="h-depth"></span>
@@ -79,7 +88,7 @@ DF_ROOT.innerHTML=`
   <span style="margin-left:auto;font-size:12px;color:var(--df-muted);" id="h-seed"></span>
   <span id="hud-btns"><button id="btn-menu">Menu</button><button id="tk-full" style="display:none;">Full</button></span>
 </div>
-<div id="select" style="display:flex;gap:12px;align-items:stretch;"></div>
+<div id="select" style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;"></div>
 <div id="stage" style="position:relative;display:none;">
   <canvas id="cv" tabindex="0" style="width:100%;display:block;border:1px solid var(--df-border);border-radius:12px;outline:none;"></canvas>
   <div id="brainbox" style="position:absolute;top:8px;right:8px;display:none;background:rgba(14,14,22,0.9);border:1px solid var(--df-border);border-radius:8px;padding:4px;">
@@ -263,7 +272,7 @@ function gearXp(){
     if(it.xp>=GEAR_LVL[it.lvl]){it.lvl++;pushMsg("Your "+itemName(it)+" grows stronger ("+statLine(it)+").");floatTxt(px,py,"+"+it.lvl+" gear","#EF9F27");}
   }
 }
-function onGearChange(){if(hp>maxHp())hp=maxHp();updateHud();if(gearOpen)renderGear();}
+function onGearChange(){if(hp>maxHp())hp=maxHp();runDirty=true;updateHud();if(gearOpen)renderGear();}
 function gainItem(it,x,y){
   const slotFor=it.slot==="ring"?(gear.ringL?(gear.ringR?null:"ringR"):"ringL"):(gear[it.slot]?null:it.slot);
   if(slotFor){
@@ -397,16 +406,14 @@ function hitMonster(m,dmg,label,byRival){
     monDeathLesson(m);
     monsters.splice(monsters.indexOf(m),1);
     let g=m.skel?3:1;
-    if(byRival){if(rival)rival.gold+=g;}
-    else{
-      g=goldAdj(g);gold+=g;
-      gainXp(m.skel?5:m.spider?3:2);
-      if(evt)evt.kill++;
-      gearXp();
-      if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+mname(m)+" dropped a potion.");}
-      else if(R()<(m.skel?0.25:m.spider?0.1:0.04))gainItem(makeItem(rollSlot(),depth),m.x,m.y);
-    }
-    pushMsg(label+" slays the "+mname(m)+(byRival?".":" (+"+g+" gold, +"+(m.skel?5:m.spider?3:2)+" xp)."));
+    if(byRival){if(rival)rival.gold+=g;pushMsg(label+" slays the "+mname(m)+".");return;}
+    g=goldAdj(g);gold+=g;
+    pushMsg(label+" slays the "+mname(m)+" (+"+g+" gold, +"+(m.skel?5:m.spider?3:2)+" xp).");
+    gainXp(m.skel?5:m.spider?3:2);
+    if(evt)evt.kill++;
+    gearXp();
+    if(R()<(m.skel?0.2:0.12)){inv.potion++;pushMsg("The "+mname(m)+" dropped a potion.");}
+    else if(R()<(m.skel?0.25:m.spider?0.1:0.04))gainItem(makeItem(rollSlot(),depth),m.x,m.y);
   }else pushMsg(label+" hits the "+mname(m)+" for "+dmg+".");
 }
 function lootChest(x,y){
@@ -447,7 +454,7 @@ function ability(){
     if(cd>0){pushMsg("Smite is recovering ("+cd+").");return;}
     let hit=0;
     for(const m of monsters.slice())if(Math.abs(m.x-px)<=1&&Math.abs(m.y-py)<=1){hitMonster(m,atk()+1,"Smite");hit++;}
-    if(!hit){pushMsg("Smite cleaves empty air.");}
+    if(!hit){pushMsg("No foe within reach of your smite.");return;}
     cd=6;
   }else{
     const tgt=nearestVisibleMonster(cls.name==="Ranger"?7:5);
@@ -502,6 +509,7 @@ function endTurn(){
   if(cls.name==="Mage")mana=Math.min(12,mana+1);
   tickPoison();regenTick();
   monstersTurn();computeVis();updateHud();
+  runDirty=true;
 }
 const MSENS=11,MACT=5;
 const species={rat:null,spider:null,skeleton:null};
@@ -732,16 +740,18 @@ function rivalTick(){
   }
 }
 function monstersTurn(){
+  const lvl=depth;
   rivalTick();
+  if(depth!==lvl){runDirty=true;return;}
   for(const m of monsters.slice()){
-    if(hp<=0)break;
+    if(hp<=0||depth!==lvl)break;
     if(monAI.on)monBrainAct(m);else monScriptAct(m);
   }
   if(monAI.on)monTrainAll();
   if(hp<=0){
     if(evt)evt.died=true;
     if(ai.mode==="off"){
-      state="dead";
+      state="dead";clearRun();
       document.getElementById("dead-sub").textContent="Depth "+(depth+1)+" - "+gold+" gold - seed "+baseSeed;
       document.getElementById("dead").style.display="flex";
     }
@@ -762,6 +772,10 @@ function updateHud(){
   document.getElementById("h-class").textContent=cls.name;
   document.getElementById("h-hp").textContent="HP "+Math.max(0,hp)+"/"+maxHp();
   document.getElementById("h-hp").style.color=hp<=maxHp()/3?"#E24B4A":"inherit";
+  const hpf=Math.max(0,Math.min(1,hp/maxHp()));
+  const hpfill=document.getElementById("h-hpfill");
+  hpfill.style.width=Math.round(hpf*100)+"%";
+  hpfill.style.background=hpf<=0.34?"#E24B4A":hpf<=0.6?"#EF9F27":"#1D9E75";
   let ex="LVL "+level+" ("+xp+"/"+(level*10)+" xp) - ATK "+atk()+" DEF "+defTotal();
   if(cls.name==="Ranger")ex+=" - "+arrows+" arrows";
   if(cls.name==="Mage")ex+=" - "+mana+" mana";
@@ -863,6 +877,7 @@ function aiRespawn(){
   inv={potion:0,scroll:0};lightTimer=0;poisonTimer=0;
   hp=maxHp();gold=0;depth=0;arrows=cls.name==="Ranger"?12:0;mana=cls.name==="Mage"?12:0;cd=0;
   genLevel();updateHud();
+  if(gearOpen)renderGear();
 }
 function turnUpkeep(){
   turnCount++;
@@ -871,6 +886,7 @@ function turnUpkeep(){
   if(cls.name==="Mage")mana=Math.min(12,mana+1);
   tickPoison();regenTick();
   monstersTurn();
+  runDirty=true;
   const fresh=computeVis();
   updateHud();
   return fresh;
@@ -1141,6 +1157,17 @@ function drawPortrait(c,cl){
 function buildSelect(){
   const sel=document.getElementById("select");
   sel.innerHTML="";
+  const sv=loadRunData();
+  if(sv){
+    const c=CLASSES[sv.cls];
+    const d=document.createElement("div");d.className="card cont";
+    const mins=Math.max(1,Math.round((Date.now()-(sv.t||Date.now()))/60000));
+    const ago=mins<60?mins+" min ago":mins<1440?Math.round(mins/60)+" h ago":Math.round(mins/1440)+" d ago";
+    d.innerHTML='<canvas width="72" height="72" style="border-radius:8px;flex:none;"></canvas><div><div style="font-weight:500;">Continue your delve</div><div style="font-size:12px;opacity:0.85;">'+c.name+' - '+LEVELS[Math.min(sv.depth,LEVELS.length-1)].toLowerCase()+' ('+(sv.depth+1)+') - level '+(sv.level||1)+' - '+(sv.gold||0)+' gold - saved '+ago+'</div><div style="font-size:12px;margin-top:4px;color:var(--df-muted);">Picking a class below starts a new delve and forgets this one.</div></div>';
+    d.onclick=()=>{const dd=loadRunData();if(dd)resumeRun(dd);};
+    sel.appendChild(d);
+    drawPortrait(d.querySelector("canvas"),c);
+  }
   CLASSES.forEach((cl,i)=>{
     const d=document.createElement("div");d.className="card";
     d.innerHTML='<canvas width="120" height="120" style="border-radius:8px;"></canvas><div style="font-weight:500;margin:8px 0 2px;">'+cl.name+'</div><div style="font-size:12px;opacity:0.75;">'+cl.blurb+'</div><div style="font-size:12px;margin-top:6px;">HP '+cl.hp+' - ATK '+cl.atk+' - DEF '+cl.def+' - sight '+cl.cone+'</div>';
@@ -1149,14 +1176,30 @@ function buildSelect(){
     drawPortrait(d.querySelector("canvas"),cl);
   });
 }
-function startGame(i){
-  cls=CLASSES[i];gold=0;depth=0;fx=1;fy=0;state="play";
-  level=1;xp=0;gear=emptyGear();bag=[];newGear=0;gearSel=null;turnCount=0;
-  toggleGear(false);adminOpen=false;
-  inv={potion:1,scroll:0};lightTimer=0;poisonTimer=0;cd=0;hp=maxHp();
-  arrows=cls.name==="Ranger"?12:0;
-  mana=cls.name==="Mage"?12:0;
-  msgs=[];floaters=[];shots=[];
+/* ---- run autosave (v0.13): the current delve survives a reload; death or a new class clears it ---- */
+const RUN_KEY="df_run";
+let runDirty=false;
+function runSnapshot(){
+  return {v:1,ver:window.DELVEFORGE_VERSION?DELVEFORGE_VERSION.version:"",t:Date.now(),
+    seed:baseSeed,depth:depth,cls:CLASSES.indexOf(cls),px:px,py:py,fx:fx,fy:fy,hp:hp,gold:gold,level:level,xp:xp,
+    inv:inv,arrows:arrows,mana:mana,cd:cd,lightTimer:lightTimer,poisonTimer:poisonTimer,turnCount:turnCount,
+    gear:gear,bag:bag,newGear:newGear,gearUid:gearUid,
+    grid:Array.from(grid),explored:Array.from(explored),
+    monsters:monsters.map(m=>({x:m.x,y:m.y,hp:m.hp,maxhp:m.maxhp,atk:m.atk,skel:m.skel,spider:m.spider})),
+    torches:torches,rooms:rooms,msgs:msgs.slice(-3)};
+}
+function saveRun(){
+  if(state!=="play"||!cls)return;
+  try{localStorage.setItem(RUN_KEY,JSON.stringify(runSnapshot()));}catch(e){}
+  runDirty=false;
+}
+function clearRun(){runDirty=false;try{localStorage.removeItem(RUN_KEY);}catch(e){}}
+function loadRunData(){
+  try{const s=localStorage.getItem(RUN_KEY);if(!s)return null;const d=JSON.parse(s);
+    if(!d||d.v!==1||!(d.cls>=0&&d.cls<CLASSES.length)||!d.grid||d.grid.length!==TW*TH)return null;return d;}
+  catch(e){return null;}
+}
+function showGameUi(){
   document.getElementById("select").style.display="none";
   document.getElementById("stage").style.display="";
   document.getElementById("hud").style.display="flex";
@@ -1167,11 +1210,49 @@ function startGame(i){
   document.getElementById("iorow").style.display="none";
   document.getElementById("dead").style.display="none";
   applyTouchLayout();
+}
+function resumeRun(d){
+  cls=CLASSES[d.cls];baseSeed=d.seed;depth=d.depth;
+  rng=mulberry32(baseSeed+depth*7919+(d.turnCount||0)*31);
+  px=d.px;py=d.py;fx=d.fx||1;fy=d.fy||0;vx=px;vy=py;hp=d.hp;gold=d.gold||0;level=d.level||1;xp=d.xp||0;
+  inv=d.inv||{potion:0,scroll:0};arrows=d.arrows||0;mana=d.mana||0;cd=d.cd||0;lightTimer=d.lightTimer||0;poisonTimer=d.poisonTimer||0;turnCount=d.turnCount||0;
+  gear=Object.assign(emptyGear(),d.gear||{});bag=d.bag||[];newGear=d.newGear||0;gearUid=Math.max(gearUid,d.gearUid||0);gearSel=null;
+  grid=Uint8Array.from(d.grid);explored=Uint8Array.from(d.explored||[]);
+  if(explored.length!==TW*TH)explored=new Uint8Array(TW*TH);
+  monsters=(d.monsters||[]).map(m=>Object.assign({vx:m.x,vy:m.y,flash:0},m));
+  torches=d.torches||[];rooms=d.rooms||[];
+  litSet=new Set();
+  for(const t of torches)for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){
+    if(Math.hypot(x-t[0],y-t[1])<=3&&los(t[0],t[1],x,y))litSet.add(idx(x,y));
+  }
+  rival=null;document.getElementById("btn-rival").textContent="Add rival";
+  msgs=[];floaters=[];shots=[];showMap=false;lastActs=null;
+  state="play";toggleGear(false);adminOpen=false;
+  showGameUi();
+  for(const m of (d.msgs||[]))pushMsg(m);
+  pushMsg("You pick up where you left off.");
+  computeVis();updateHud();cv.focus();refreshBrainList();monInfo();
+  runDirty=true;
+}
+setInterval(()=>{if(runDirty&&state==="play")saveRun();},1000);
+window.addEventListener("pagehide",()=>{if(runDirty&&state==="play")saveRun();});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&runDirty&&state==="play")saveRun();});
+function startGame(i){
+  clearRun();
+  cls=CLASSES[i];gold=0;depth=0;fx=1;fy=0;state="play";
+  level=1;xp=0;gear=emptyGear();bag=[];newGear=0;gearSel=null;turnCount=0;
+  toggleGear(false);adminOpen=false;
+  inv={potion:1,scroll:0};lightTimer=0;poisonTimer=0;cd=0;hp=maxHp();
+  arrows=cls.name==="Ranger"?12:0;
+  mana=cls.name==="Mage"?12:0;
+  msgs=[];floaters=[];shots=[];
+  showGameUi();
   pushMsg("You enter the abandoned manor. Find the stairs down.");
   if(touchWanted())pushMsg("Tap the dungeon to step that way, hold to keep walking, pinch or Zoom to see more. Map shows the whole level.");
   genLevel();updateHud();cv.focus();refreshBrainList();monInfo();
+  runDirty=true;
 }
-document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";toggleGear(false);adminOpen=false;
+document.getElementById("btn-again").onclick=()=>{baseSeed=Math.floor(Math.random()*1e9);state="select";toggleGear(false);adminOpen=false;clearRun();buildSelect();
   document.getElementById("select").style.display="flex";
   document.getElementById("stage").style.display="none";
   document.getElementById("pad").style.display="none";
@@ -1252,7 +1333,8 @@ function applyTouchLayout(){
   document.getElementById("invrow").style.display=inGame&&!on?"flex":"none";
   document.getElementById("btn-touch").textContent="Touch pad: "+touchPref;
   document.getElementById("btn-dpad").textContent="D-pad: "+dpadPref;
-  document.getElementById("tk-full").style.display=(document.fullscreenEnabled&&DF_ROOT.requestFullscreen)?"":"none";
+  const standalone=!!(window.matchMedia&&(matchMedia("(display-mode: fullscreen)").matches||matchMedia("(display-mode: standalone)").matches));
+  document.getElementById("tk-full").style.display=(!standalone&&document.fullscreenEnabled&&DF_ROOT.requestFullscreen)?"":"none";
   const ad=document.getElementById("admin");
   ad.classList.toggle("sheet",adminOpen);
   document.getElementById("admin-head").style.display=adminOpen?"flex":"none";
@@ -1464,6 +1546,7 @@ function draw(t){
   ox=vw>=TW?(TW-vw)/2:Math.max(0,Math.min(TW-vw,ox));
   oy=vh>=TH?(TH-vh)/2:Math.max(0,Math.min(TH-vh,oy));
   camX=ox;camY=oy;camTs=ts;
+  const Lr=lightR();
   ctx.translate(-ox*ts,-oy*ts);
   const cx0=Math.max(0,Math.floor(ox)),cx1=Math.min(TW-1,Math.ceil(ox+vw)),cy0=Math.max(0,Math.floor(oy)),cy1=Math.min(TH-1,Math.ceil(oy+vh));
   for(let y=cy0;y<=cy1;y++)for(let x=cx0;x<=cx1;x++){
@@ -1483,6 +1566,7 @@ function draw(t){
       ctx.fillStyle=vis?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.02)";ctx.fillRect(X,Y,ts,1.5);
     }else{
       ctx.fillStyle=vis?"#3f3a4b":"#25222d";ctx.fillRect(X,Y,ts,ts);
+      if(y>0&&grid[idx(x,y-1)]===WALL){ctx.fillStyle="rgba(0,0,0,0.22)";ctx.fillRect(X,Y,ts,ts*0.3);}
       if((x*7+y*13)%5===0){ctx.fillStyle="rgba(255,255,255,0.04)";ctx.fillRect(X+ts*0.28,Y+ts*0.55,2,2);}
       if((x*11+y*3)%7===0){ctx.fillStyle="rgba(0,0,0,0.2)";ctx.fillRect(X+ts*0.6,Y+ts*0.22,2.5,2);}
       if(vis&&litSet.has(id)){ctx.fillStyle="rgba(240,160,60,"+(0.11*flick).toFixed(3)+")";ctx.fillRect(X,Y,ts,ts);}
@@ -1506,6 +1590,13 @@ function draw(t){
         ctx.strokeStyle="#9a6428";ctx.beginPath();ctx.moveTo(X+3,Y+ts*0.42);ctx.lineTo(X+ts/2,Y+ts*0.18);ctx.lineTo(X+ts-3,Y+ts*0.42);ctx.stroke();
       }
     }
+    if(vis){
+      let al=(Math.hypot(x-px,y-py)-(Lr-1.6))/2.4;
+      if(litSet.has(id))al*=0.35;
+      if(al>0){ctx.fillStyle="rgba(8,8,14,"+Math.min(0.55,al).toFixed(3)+")";ctx.fillRect(X,Y,ts,ts);}
+    }else{
+      ctx.fillStyle="rgba(30,36,70,0.22)";ctx.fillRect(X,Y,ts,ts);
+    }
   }
   for(const tc of torches){
     const id=idx(tc[0],tc[1]);
@@ -1520,6 +1611,7 @@ function draw(t){
     if(m.flash>0)m.flash-=0.1;
     if(!visCache.has(idx(m.x,m.y)))continue;
     const X=m.vx*ts+ts/2,Y=m.vy*ts+ts/2;
+    ctx.fillStyle="rgba(0,0,0,0.28)";ctx.beginPath();ctx.ellipse(X,Y+ts*0.36,ts*0.24,ts*0.09,0,0,7);ctx.fill();
     if(m.flash>0){ctx.fillStyle="rgba(255,255,255,"+(m.flash*0.5).toFixed(2)+")";ctx.beginPath();ctx.arc(X,Y,ts*0.34,0,7);ctx.fill();}
     if(m.skel){
       ctx.strokeStyle="#e2e2ea";ctx.lineWidth=1.4;ctx.lineCap="round";
@@ -1565,6 +1657,7 @@ function draw(t){
   if(rival&&!rival.dead&&visCache.has(idx(rival.x,rival.y))){
     rival.vx+=(rival.x-rival.vx)*0.4;rival.vy+=(rival.y-rival.vy)*0.4;
     const RX=rival.vx*ts+ts/2,RY=rival.vy*ts+ts/2;
+    ctx.fillStyle="rgba(0,0,0,0.3)";ctx.beginPath();ctx.ellipse(RX,RY+ts*0.36,ts*0.26,ts*0.1,0,0,7);ctx.fill();
     ctx.fillStyle=rival.color;ctx.beginPath();ctx.arc(RX,RY,ts*0.3,0,7);ctx.fill();
     ctx.fillStyle="#f5e6d0";ctx.beginPath();ctx.arc(RX+rival.fx*ts*0.15,RY+rival.fy*ts*0.15,ts*0.09,0,7);ctx.fill();
     ctx.strokeStyle="#ffffff";ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(RX,RY,ts*0.4,0,7);ctx.stroke();
@@ -1572,6 +1665,7 @@ function draw(t){
   const PX=vx*ts+ts/2,PY=vy*ts+ts/2;
   ctx.fillStyle="rgba(240,180,80,"+(0.06*flick).toFixed(3)+")";
   ctx.beginPath();ctx.arc(PX,PY,lightR()*ts,0,7);ctx.fill();
+  ctx.fillStyle="rgba(0,0,0,0.3)";ctx.beginPath();ctx.ellipse(PX,PY+ts*0.38,ts*0.28,ts*0.1,0,0,7);ctx.fill();
   ctx.fillStyle=cls.color;ctx.beginPath();ctx.arc(PX,PY,ts*0.32,0,7);ctx.fill();
   ctx.fillStyle="#f5e6d0";ctx.beginPath();ctx.arc(PX+fx*ts*0.16,PY+fy*ts*0.16,ts*0.1,0,7);ctx.fill();
   if(cls.name==="Warrior"){
@@ -1594,6 +1688,10 @@ function draw(t){
     ctx.globalAlpha=1;
   }
   floaters=floaters.filter(f=>f.age<=1);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  const vg=ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.38,w/2,h/2,Math.max(w,h)*0.74);
+  vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(0,0,0,0.42)");
+  ctx.fillStyle=vg;ctx.fillRect(0,0,w,h);
   if(showMap){
     ctx.setTransform(DPR,0,0,DPR,0,0);
     const ms=w>=480?4:3,mw=TW*ms,mh=TH*ms,MX=w-mw-10,MY=10;
@@ -1678,7 +1776,7 @@ setInterval(()=>{
 <script id="version-stamp">
 /* GENERATED by tools/stamp.js - do not edit by hand (single-file game;
    the version block lives inline so the hosted artifact keeps it too). */
-window.DELVEFORGE_VERSION = { version: "0.12.0", built: "2026-10-07 14:43" };
+window.DELVEFORGE_VERSION = { version: "0.13.0", built: "2026-10-07 20:27" };
 (function () {
   var text = "v" + DELVEFORGE_VERSION.version + " - updated " + DELVEFORGE_VERSION.built;
   var els = document.querySelectorAll(".version-tag");

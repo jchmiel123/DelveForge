@@ -77,7 +77,13 @@ floor 0.08.
 `df_brains` {name:{brain,eps,episodes,bestDepth,cls}},
 `df_species` {rat|spider|skeleton:{brain,eps,steps,deaths,kills}},
 `df_theme` "dark"|"light", `df_touch` "auto"|"on"|"off" (phone UI), `df_dpad`
-"on"|"off" (visible d-pad), `df_zoom` "fit"|"<px per tile>". Note:
+"on"|"off" (visible d-pad), `df_zoom` "fit"|"<px per tile>", `df_run` (v0.13
+autosave: schema v:1 = seed, depth, cls index, hero stats, gear, bag, grid,
+explored, monsters, torches, rooms, last 3 messages; written at most once a
+second while dirty plus on pagehide/visibilitychange; cleared on death, on
+"Rise again" and when a class is picked; the select screen shows a
+"Continue your delve" card when it exists; the rival is NOT saved and the rng
+is reseeded on resume, so resumed runs are not seed-reproducible). Note:
 chat-widget storage is sandboxed per
 conversation; the hosted artifact and web/index.html get durable
 browser storage.
@@ -254,6 +260,22 @@ diving yet.
 ### N4. Doors + keys; monster AI states (sleep/wander/hunt);
 sound toggle. Gameplay filler - good low-risk tasks.
 
+### N6. Review pass - DONE in v0.13.0 (2026-10-07)
+Fixed: Warrior smite charged its 6-turn cooldown and spent the turn on a
+miss while the AI's aiUse did neither (now a miss costs nothing, like the
+Ranger/Mage "no target"); monstersTurn kept iterating the OLD monster
+array after rivalTick's genLevel replaced the level (ghost attacks) - it now
+bails when depth changed; kill messages are ordered slay -> xp -> drops;
+an AI respawn re-renders an open Gear sheet. Added: run autosave (above),
+HP bar in the HUD, light falloff shading + blue "memory" tint on explored
+tiles, wall shadow strips on floors, entity drop shadows, a vignette, PWA
+head tags + web/manifest.json + web/icons/* (installable from GitHub Pages:
+https://jchmiel123.github.io/DelveForge/ -> root index.html redirects to
+web/; .nojekyll at the root), safe-area padding on the touch bar,
+user-select:none on the game UI (textarea/input keep selection).
+Hosting rule: GitHub Pages serves web/ straight from master, so every push
+of master IS a deploy; keep the artifact redeploy for the claude.ai link.
+
 ### N5. Gear + inventory - DONE in v0.12.0 (2026-10-07, Justin's spec from the phone)
 Justin: "a full inventory screen - head, shoulders, cape, chest, bracers,
 gauntlets, a ring on each hand, legs, boots"; keep the "don't have to swap
@@ -306,5 +328,6 @@ N3-findings fixes above - flag it to Justin before investing.
 - NeuroForge (brains library): https://github.com/jchmiel123/NeuroForge
 - JS runtime: NeuroForge/web/neuroforge.js (game currently inlines an
   equivalent nf* copy; converge on the shared file during N3).
+- GitHub Pages (plain web, installable, no sign-in): https://jchmiel123.github.io/DelveForge/
 - Hosted artifact: https://claude.ai/code/artifact/d817b246-70f7-424b-80a3-423df7e0c500
   (same artifact, short link: https://claude.ai/artifact/Tgg5fiP964mzGhHCqKPFSF)
